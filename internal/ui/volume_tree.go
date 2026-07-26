@@ -401,6 +401,8 @@ func (m Model) viewVolumeTree() string {
 			{"↑↓", "move"},
 			{"Enter", "open"},
 			{"tab", "focus file"},
+			{"y/Y", "↓ local"},
+			{"u/U", "↑ volume"},
 			{"e", "edit+LSP"},
 			{"L", "lint"},
 			{"o", "open dir"},
@@ -625,6 +627,14 @@ func (m Model) handleVolumeTreeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadVolChildren("")
 	case "o":
 		return m.openVolInFileManager()
+	case "y":
+		return m.beginVolTransfer(volTransferDownload)
+	case "Y":
+		return m.beginVolTransfer(volTransferMoveDown)
+	case "u":
+		return m.beginVolTransfer(volTransferUpload)
+	case "U":
+		return m.beginVolTransfer(volTransferMoveUp)
 	case " ", "enter":
 		n := m.selectedVolNode()
 		if n == nil {
