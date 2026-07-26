@@ -1,0 +1,5 @@
+/dockafe
+/docker-tui
+*.exe
+*.test
+/dist/
