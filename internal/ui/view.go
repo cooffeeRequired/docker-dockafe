@@ -74,7 +74,14 @@ func (m Model) viewList() string {
 		tabs = append(tabs, style.Render(label))
 	}
 
-	top := lipgloss.JoinHorizontal(lipgloss.Top, titleStyle.Render(" "+AppName+" "+AppVersion+" "), "  ", lipgloss.JoinHorizontal(lipgloss.Top, tabs...))
+	top := lipgloss.JoinHorizontal(lipgloss.Top,
+		titleStyle.Render(m.versionTitle()),
+		"  ",
+		lipgloss.JoinHorizontal(lipgloss.Top, tabs...),
+	)
+	if badge := m.updateBadge(); badge != "" {
+		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", badge)
+	}
 
 	metaBits := []string{
 		fmt.Sprintf("sort:%s", m.sortLabel()),
@@ -91,6 +98,9 @@ func (m Model) viewList() string {
 	}
 	if m.selectedGroup != "" {
 		metaBits = append(metaBits, "project:"+m.selectedGroup)
+	}
+	if m.updateAvailable {
+		metaBits = append(metaBits, "update:"+m.updateLatest+" (U)")
 	}
 	meta := metaStyle.Render(strings.Join(metaBits, " · "))
 
@@ -149,12 +159,15 @@ func (m Model) viewPanel() string {
 	}
 
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
-		titleStyle.Render(" "+AppName+" "+AppVersion+" "),
+		titleStyle.Render(m.versionTitle()),
 		"  ",
 		activeTabStyle.Render(" "+modeLabel+" "),
 		"  ",
 		metaStyle.Render(m.detailTitle),
 	)
+	if badge := m.updateBadge(); badge != "" {
+		header = lipgloss.JoinHorizontal(lipgloss.Top, header, " ", badge)
+	}
 
 	// Don't run viewport content through Width/Height lipgloss.Render —
 	// that can strip / break ANSI colors from logs.
