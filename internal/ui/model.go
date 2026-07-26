@@ -27,7 +27,7 @@ const (
 const AppName = "Dockafé"
 
 // AppVersion is set at link time via -ldflags "-X …AppVersion=…".
-var AppVersion = "1.6.0"
+var AppVersion = "1.0.0"
 
 var tabNames = []string{"Compose", "Containers", "Images", "Volumes", "Networks"}
 
