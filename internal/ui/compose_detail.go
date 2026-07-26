@@ -118,7 +118,7 @@ func (m Model) viewComposeDetail() string {
 		line := fmt.Sprintf("%s%-*s %-*s cpu=%-*s mem=%-*s  %s",
 			marker,
 			nameW, truncate(c.Name, nameW),
-			stateW, c.State,
+			stateW, docker.StateLabel(c.State, c.Health, c.OOMKilled),
 			cpuW, c.CPU,
 			memW, truncate(c.Mem, memW),
 			c.Ports,
@@ -182,6 +182,22 @@ func (m Model) handleComposeDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.composeOpenInspect()
 	case "l":
 		return m.composeOpenLogs()
+	case "g":
+		svc, ok := m.selectedComposeService()
+		if !ok || svc.ID == "" {
+			m.status = "select a service for graphs"
+			return m, nil
+		}
+		m.returnToCompose = true
+		m.graphsKey = svc.ID
+		m.graphsTitle = svc.Name
+		m.detailTitle = "Graphs · " + svc.Name
+		m.mode = ModeGraphs
+		m.status = "live CPU/MEM · esc back"
+		m.relayout()
+		m.vp.SetContent(m.renderGraphsBody())
+		m.vp.GotoTop()
+		return m, nil
 	case "t":
 		return m.composeOpenTop()
 	case "e":

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -22,6 +23,7 @@ const (
 	TabImages
 	TabVolumes
 	TabNetworks
+	TabSettings
 )
 
 const AppName = "Dockafé"
@@ -29,7 +31,7 @@ const AppName = "Dockafé"
 // AppVersion is set at link time via -ldflags "-X …AppVersion=…".
 var AppVersion = "1.0.0"
 
-var tabNames = []string{"Compose", "Containers", "Images", "Volumes", "Networks"}
+var tabNames = []string{"Compose", "Containers", "Images", "Volumes", "Networks", "Settings"}
 
 type Mode int
 
@@ -45,6 +47,10 @@ const (
 	ModeCreateCompose
 	ModePullImage
 	ModeVolumeTree
+	ModeGraphs
+	ModeEvents
+	ModeHosts
+	ModeVolTransfer
 )
 
 type confirmKind int
@@ -171,6 +177,30 @@ type Model struct {
 	updateAssetURL  string
 	updateErr       string
 
+	statsHist   map[string]*statsSeries
+	graphsKey   string
+	graphsTitle string
+
+	eventLog      []docker.EventInfo
+	eventAlert    string
+	eventWatching bool
+	eventCancel   context.CancelFunc
+	eventCh       <-chan docker.EventInfo
+	eventErrCh    <-chan error
+
+	hostEndpoints []docker.Endpoint
+	hostCursor    int
+	hostCustom    bool
+	hostInput     textinput.Model
+	hostErr       string
+
+	volTransferKind  volTransferKind
+	volTransferPath  string
+	volTransferIsDir bool
+	volTransferInput textinput.Model
+
+	settingsCursor settingsItem
+
 	// Async generation tokens (ignore stale responses)
 	dataGen uint64
 	logsGen uint64
@@ -248,6 +278,7 @@ func New(client *docker.Client) Model {
 		sortKey:         SortName,
 		sortAsc:         true,
 		volListCache:    map[string][]docker.VolumeEntry{},
+		statsHist:       map[string]*statsSeries{},
 		dataGen:         1,
 	}
 }
@@ -279,7 +310,14 @@ func logsKeyMap() viewport.KeyMap {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.refreshGen(true, m.dataGen), tickCmd(), splashTimerCmd(), splashAnimCmd(), checkUpdateCmd())
+	return tea.Batch(
+		m.refreshGen(true, m.dataGen),
+		tickCmd(),
+		splashTimerCmd(),
+		splashAnimCmd(),
+		checkUpdateCmd(),
+		startEventWatchCmd(m.client),
+	)
 }
 
 func tickCmd() tea.Cmd {

@@ -57,11 +57,22 @@ func helpFooterList(tab Tab) string {
 		{"/", "filter"},
 		{"o/O", "sort"},
 		{"F", filterLabel},
-		{"1-5/[ ]", "tabs"},
+		{"1-6/[ ]", "tabs"},
 		{"r", "refresh"},
 		{"U", "update"},
+		{"E", "events"},
+		{"H", "hosts"},
 		{"q", "quit"},
 	})
+
+	if tab == TabSettings {
+		return nav + "\n" + renderHelpRow("set", []helpBinding{
+			{"↑↓", "move"},
+			{"Enter", "open"},
+			{"H", "hosts"},
+			{"U", "update"},
+		})
+	}
 
 	var act []helpBinding
 	switch tab {
@@ -75,6 +86,7 @@ func helpFooterList(tab Tab) string {
 			{"R", "restart"},
 			{"b", "rebuild"},
 			{"l", "logs"},
+			{"g", "graphs"},
 			{"d/D", "remove"},
 		}
 	case TabContainers:
@@ -86,6 +98,7 @@ func helpFooterList(tab Tab) string {
 			{"p", "pause"},
 			{"k", "kill"},
 			{"l", "logs"},
+			{"g", "graphs"},
 			{"t", "top"},
 			{"e", "exec"},
 			{"d", "remove"},
@@ -166,6 +179,7 @@ func helpFooterComposeDetail() string {
 		{"↑↓", "select"},
 		{"Enter", "inspect"},
 		{"l", "logs"},
+		{"g", "graphs"},
 		{"t", "top"},
 		{"e", "exec"},
 		{"s", "start"},
@@ -218,7 +232,7 @@ func helpTextFull() string {
 
 	b.WriteString(sec("Navigation"))
 	b.WriteByte('\n')
-	b.WriteString(row("1-5  [ ]  Tab", "switch tabs"))
+	b.WriteString(row("1-6  [ ]  Tab", "switch tabs (6 = Settings)"))
 	b.WriteByte('\n')
 	b.WriteString(row("↑ ↓", "move selection"))
 	b.WriteByte('\n')
@@ -229,6 +243,16 @@ func helpTextFull() string {
 	b.WriteString(row("?", "this help"))
 	b.WriteByte('\n')
 	b.WriteString(row("q", "quit"))
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+
+	b.WriteString(sec("Settings (tab 6)"))
+	b.WriteByte('\n')
+	b.WriteString(row("Enter", "open selected setting"))
+	b.WriteByte('\n')
+	b.WriteString(row("H", "Docker hosts / contexts"))
+	b.WriteByte('\n')
+	b.WriteString(row("U", "check / install update"))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 
@@ -264,6 +288,12 @@ func helpTextFull() string {
 	b.WriteByte('\n')
 	b.WriteString(row("l / f", "logs (follow)"))
 	b.WriteByte('\n')
+	b.WriteString(row("g", "CPU/MEM graphs (history)"))
+	b.WriteByte('\n')
+	b.WriteString(row("E", "docker events (die/oom/health)"))
+	b.WriteByte('\n')
+	b.WriteString(row("H", "switch Docker host / context"))
+	b.WriteByte('\n')
 	b.WriteString(row("t", "docker top"))
 	b.WriteByte('\n')
 	b.WriteString(row("e", "docker exec -it"))
@@ -293,6 +323,10 @@ func helpTextFull() string {
 	b.WriteString(row("Enter / Space", "expand dir / preview file"))
 	b.WriteByte('\n')
 	b.WriteString(row("e", "edit in helix/nvim/$EDITOR (LSP)"))
+	b.WriteByte('\n')
+	b.WriteString(row("y / Y", "copy / move volume → local"))
+	b.WriteByte('\n')
+	b.WriteString(row("u / U", "copy / move local → volume"))
 	b.WriteByte('\n')
 	b.WriteString(row("L", "lint (ruff/go vet/eslint/…)"))
 	b.WriteByte('\n')

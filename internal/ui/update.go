@@ -7,6 +7,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/cooffeeRequired/dockafe/internal/docker"
 )
 
 func (m Model) refresh(withStats bool) tea.Cmd {
@@ -175,7 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		if (m.mode == ModeList || m.mode == ModeComposeDetail) && !m.busy && m.confirm == confirmNone {
+		if (m.mode == ModeList || m.mode == ModeComposeDetail || m.mode == ModeGraphs) && !m.busy && m.confirm == confirmNone {
 			m.dataGen++
 			cmds = append(cmds, m.refreshGen(true, m.dataGen))
 		}
@@ -219,6 +221,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "updated to " + m.updateLatest + " · restarting…"
 		m.errMsg = ""
 		return m, tea.Quit
+
+	case eventWatchStartedMsg:
+		cmd := m.applyEventWatchStart(msg)
+		return m, cmd
+
+	case eventMsg:
+		m.appendEvent(msg.ev)
+		m.refreshEventsView()
+		if m.mode == ModeList && msg.ev.Level == docker.EventCritLevel {
+			m.status = "event: " + msg.ev.Message + " · press E"
+		}
+		return m, m.pollEventCmd()
+
+	case eventErrMsg:
+		if msg.err != nil {
+			m.eventAlert = "events: " + msg.err.Error()
+		}
+		return m, nil
+
+	case hostsLoadedMsg:
+		if msg.err != nil {
+			m.hostErr = msg.err.Error()
+		}
+		m.hostEndpoints = msg.endpoints
+		if m.hostCursor >= len(m.hostEndpoints) {
+			m.hostCursor = 0
+		}
+		return m, nil
+
+	case hostSwitchMsg:
+		return m, m.applyHostSwitch(msg)
+
+	case volTransferDoneMsg:
+		m.busy = false
+		m.volTransferKind = volTransferNone
+		if msg.err != nil {
+			m.errMsg = msg.err.Error()
+			m.status = "transfer failed"
+			return m, nil
+		}
+		m.errMsg = ""
+		m.status = "transfer ok · " + msg.path
+		m.volListCache = map[string][]docker.VolumeEntry{}
+		if m.mode == ModeVolumeTree {
+			return m, m.loadVolChildren("")
+		}
+		return m, nil
 
 	case logsTickMsg:
 		if m.mode == ModeLogs && m.logsFollow && !m.busy && m.logsTarget != "" {
@@ -316,6 +365,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.volumes = msg.volumes
 		m.networks = msg.networks
 		m.lastSync = msg.at
+		m.recordStatsFromData(msg)
 		m.status = fmt.Sprintf("sync %s · sort %s", msg.at.Format("15:04:05"), m.sortLabel())
 		if m.mode == ModeSplash {
 			m.splashDataReady = true
@@ -333,6 +383,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prefer = svc.ID
 			}
 			m.syncComposeServices(prefer)
+		}
+		if m.mode == ModeGraphs {
+			m.status = fmt.Sprintf("graphs · sync %s · esc back", msg.at.Format("15:04:05"))
+			m.refreshGraphsView()
 		}
 		return m, nil
 
@@ -426,7 +480,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyRows()
 		return m, cmd
 	}
-	if m.mode == ModeDetail || m.mode == ModeLogs || m.mode == ModeHelp {
+	if m.mode == ModeDetail || m.mode == ModeLogs || m.mode == ModeHelp || m.mode == ModeGraphs || m.mode == ModeEvents {
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
 		return m, cmd
@@ -458,6 +512,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeVolumeTree {
 		return m.handleVolumeTreeKey(msg)
+	}
+
+	if m.mode == ModeHosts {
+		return m.handleHostsKey(msg)
+	}
+
+	if m.mode == ModeVolTransfer {
+		return m.handleVolTransferKey(msg)
 	}
 
 	if m.mode == ModeConfirm {
@@ -508,7 +570,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleComposeDetailKey(msg)
 	}
 
-	if m.mode == ModeDetail || m.mode == ModeLogs {
+	if m.mode == ModeList && m.tab == TabSettings {
+		switch key {
+		case "up", "k", "down", "j", "enter", " ":
+			return m.handleSettingsKey(msg)
+		}
+	}
+
+	if m.mode == ModeDetail || m.mode == ModeLogs || m.mode == ModeGraphs || m.mode == ModeEvents {
 		// Search input takes over when open
 		if m.mode == ModeLogs && m.logsSearchOpen && m.logsSearchInput.Focused() {
 			return m.handleLogSearchKey(msg)
@@ -530,6 +599,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "backspace":
 			if m.mode == ModeLogs && (m.logsSearchOpen || len(m.logsSearchMatches) > 0) {
 				m.closeLogSearch()
+				return m, nil
+			}
+			if m.mode == ModeEvents || m.mode == ModeGraphs {
+				m.backFromPanel()
+				m.relayout()
 				return m, nil
 			}
 			m.backFromPanel()
@@ -579,6 +653,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.vp.HalfPageDown()
 			return m, nil
 		case "f", "l":
+			if m.mode == ModeEvents || m.mode == ModeGraphs {
+				return m, nil
+			}
 			// Volume detail: f opens file tree (no container logs).
 			if m.mode == ModeDetail && key == "f" && strings.HasPrefix(m.detailTitle, "Volume · ") {
 				return m.openVolumeTree()
@@ -603,6 +680,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// reserved — list filter only
 
 		case "r":
+			if m.mode == ModeGraphs {
+				m.loading = true
+				m.status = "refreshing…"
+				return m, m.refresh(true)
+			}
+			if m.mode == ModeEvents {
+				m.refreshEventsView()
+				m.status = "events view refreshed"
+				return m, nil
+			}
 			if m.mode == ModeLogs {
 				m.logsGen++
 				return m, m.reloadLogs()
@@ -612,8 +699,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.fetchDetail()
 		case "e":
+			if m.mode == ModeEvents || m.mode == ModeGraphs {
+				return m, nil
+			}
 			return m.execTarget()
 		case "t":
+			if m.mode == ModeEvents || m.mode == ModeGraphs {
+				return m, nil
+			}
 			return m.openTopForTarget()
 		case "s":
 			return m.actionOnTarget("start")
@@ -661,6 +754,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openHelp()
 		return m, nil
 	case "/":
+		if m.tab == TabSettings {
+			return m, nil
+		}
 		m.mode = ModeFilter
 		m.filter.Focus()
 		return m, nil
@@ -702,7 +798,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureSortForTab()
 		m.relayout()
 		return m, nil
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3", "4", "5", "6":
 		m.tab = Tab(int(key[0] - '1'))
 		m.ensureSortForTab()
 		m.relayout()
@@ -731,6 +827,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.askKill()
 	case "l":
 		return m.openLogsForTarget()
+	case "g":
+		return m.openGraphs()
+	case "E":
+		return m.openEvents()
+	case "H":
+		return m.openHosts()
 	case "t":
 		return m.openTopForTarget()
 	case "e":

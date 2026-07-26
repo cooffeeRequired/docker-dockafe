@@ -14,7 +14,7 @@ func (m *Model) relayout() {
 	header := 3
 	footer := 5 // status + 2-line help + breathing room
 	switch m.mode {
-	case ModeDetail, ModeLogs, ModeHelp:
+	case ModeDetail, ModeLogs, ModeHelp, ModeGraphs, ModeEvents:
 		m.vp.Width = max(20, m.width-4)
 		m.vp.Height = max(5, m.height-header-footer-1)
 	case ModeComposeDetail:
@@ -55,7 +55,18 @@ func (m Model) View() string {
 		return m.viewList()
 	case ModeDetail, ModeLogs, ModeHelp:
 		return m.viewPanel()
+	case ModeGraphs:
+		return m.viewGraphs()
+	case ModeEvents:
+		return m.viewEvents()
+	case ModeHosts:
+		return m.viewHosts()
+	case ModeVolTransfer:
+		return m.viewVolTransfer()
 	default:
+		if m.tab == TabSettings {
+			return m.viewSettings()
+		}
 		return m.viewList()
 	}
 }
@@ -120,6 +131,8 @@ func (m Model) viewList() string {
 	}
 	if m.errMsg != "" {
 		statusLine = errorStyle.Render("ERR: " + truncate(m.errMsg, max(20, m.width-10)))
+	} else if m.eventAlert != "" {
+		statusLine = errorStyle.Render("EVT: " + truncate(m.eventAlert, max(20, m.width-10)))
 	} else {
 		statusLine = statusStyle.Render(statusLine)
 	}

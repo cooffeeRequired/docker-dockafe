@@ -132,7 +132,7 @@ func (m Model) filteredContainers() []docker.ContainerInfo {
 		if m.runningOnly && !c.Running {
 			continue
 		}
-		if !matchesFilter(q, c.Name, c.Image, c.Project, c.Service, c.State, c.Status, c.Ports, short(c.ID)) {
+		if !matchesFilter(q, c.Name, c.Image, c.Project, c.Service, c.State, c.Status, c.Health, c.Ports, short(c.ID)) {
 			continue
 		}
 		out = append(out, c)
@@ -255,6 +255,8 @@ func (m *Model) applyRows() {
 
 	var rows []table.Row
 	switch m.tab {
+	case TabSettings:
+		// Settings uses a dedicated view, not the resource table.
 	case TabCompose:
 		for _, g := range m.filteredGroups() {
 			rows = append(rows, table.Row{
@@ -274,7 +276,7 @@ func (m *Model) applyRows() {
 			rows = append(rows, table.Row{
 				c.Name,
 				proj,
-				c.State,
+				docker.StateLabel(c.State, c.Health, c.OOMKilled),
 				c.CPU,
 				c.Mem,
 				truncate(c.Ports, 36),
@@ -348,7 +350,7 @@ func defaultColumns(tab Tab, width int) []table.Column {
 		cols = []table.Column{
 			{Title: "NAME", Width: max(14, width/6)},
 			{Title: "PROJECT", Width: 14},
-			{Title: "STATE", Width: 10},
+			{Title: "STATE", Width: 11},
 			{Title: "CPU", Width: 7},
 			{Title: "MEM", Width: 16},
 			{Title: "PORTS", Width: max(16, width/4)},
@@ -367,6 +369,11 @@ func defaultColumns(tab Tab, width int) []table.Column {
 			{Title: "DRIVER", Width: 8},
 			{Title: "IN USE", Width: max(18, width/4)},
 			{Title: "MOUNTPOINT", Width: max(20, width/3)},
+		}
+	case TabSettings:
+		cols = []table.Column{
+			{Title: "SETTING", Width: max(20, width/2)},
+			{Title: "VALUE", Width: max(20, width/2)},
 		}
 	default:
 		cols = []table.Column{
@@ -438,6 +445,13 @@ func emptyDash(s string) string {
 
 func max(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b
