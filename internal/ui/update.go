@@ -198,7 +198,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logsTickMsg:
 		if m.mode == ModeLogs && m.logsFollow && !m.busy && m.logsTarget != "" {
 			m.logsGen++
-			cmds = append(cmds, m.fetchLogsGen(m.logsGen, m.logsTarget, m.logsName), logsTickCmd())
+			// Use reloadLogs so comma-joined compose targets fetch per container.
+			cmds = append(cmds, m.reloadLogs(), logsTickCmd())
 		}
 		return m, tea.Batch(cmds...)
 
