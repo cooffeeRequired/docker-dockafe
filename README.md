@@ -61,9 +61,13 @@
 
 | Area | What you get |
 |------|----------------|
-| **Tabs** | Compose, Containers, Images, Volumes, Networks |
+| **Tabs** | Compose, Containers, Images, Volumes, Networks, Settings |
 | **Lifecycle** | Start, stop, restart, rebuild, remove, prune |
 | **Logs** | Follow mode, text and regex search, colored output |
+| **Graphs** | Live CPU/MEM history sparklines (`g` on Compose/Containers) |
+| **Events** | Live Docker container events; OOM/die/unhealthy alerts (`E`) |
+| **Remote hosts** | Switch Docker context / `--host` / in-app `H` (ssh/tcp/unix) |
+| **Transfer** | Volume file copy/move ↔ local (`y/Y` download, `u/U` upload) |
 | **Volume browser** | File tree, syntax highlighting, lint, Tab focus mode |
 | **Editors** | Helix, Neovim, or VS Code (`--wait`) with LSP |
 | **Filters** | `/` text filter, `o`/`O` sort, `F` running / in-use only |
@@ -129,11 +133,15 @@ Press <kbd>?</kbd> inside the app for the full reference.
 
 | Area | Keys |
 |------|------|
-| Tabs | <kbd>1</kbd>–<kbd>5</kbd>, <kbd>[</kbd> <kbd>]</kbd> |
+| Tabs | <kbd>1</kbd>–<kbd>6</kbd>, <kbd>[</kbd> <kbd>]</kbd> |
 | Filter / sort | <kbd>/</kbd>, <kbd>o</kbd>/<kbd>O</kbd>, <kbd>F</kbd> running / in-use |
+| Settings | <kbd>6</kbd> hosts, updates, about |
 | Lifecycle | <kbd>s</kbd> start, <kbd>x</kbd> stop, <kbd>R</kbd> restart, <kbd>b</kbd> rebuild, <kbd>d</kbd>/<kbd>D</kbd> remove |
 | Logs | <kbd>l</kbd>, <kbd>/</kbd> find, <kbd>Ctrl</kbd>+<kbd>G</kbd> regex |
-| Volume files | <kbd>f</kbd> tree, <kbd>Tab</kbd> focus, <kbd>e</kbd> edit, <kbd>L</kbd> lint, <kbd>o</kbd> open dir |
+| Events | <kbd>E</kbd> live die/oom/health events |
+| Hosts | <kbd>H</kbd> switch Docker host / context |
+| Graphs | <kbd>g</kbd> CPU/MEM history (Compose / Containers) |
+| Volume files | <kbd>f</kbd> tree, <kbd>y</kbd>/<kbd>Y</kbd> ↓ local, <kbd>u</kbd>/<kbd>U</kbd> ↑ volume |
 | Quit | <kbd>q</kbd> |
 | Update | <kbd>U</kbd> check / install from GitHub Releases |
 
@@ -143,9 +151,14 @@ Press <kbd>?</kbd> inside the app for the full reference.
 
 | Variable | Purpose |
 |----------|---------|
-| `DOCKER_HOST` | Docker daemon address |
+| `DOCKER_HOST` | Docker daemon address (overridden by `--host` / in-app `H`) |
 | `DOCKAFE_EDITOR` / `EDITOR` / `VISUAL` | External editor for volume files. `code` / `codium` get `--wait` automatically |
 | `DOCKAFE_BUSYBOX_IMAGE` | Helper image when host mount is unavailable (default `busybox:1.36.1`). Treat as trusted — it is pulled/run with the volume bind |
+
+```bash
+dockafe --host ssh://user@podnikam.eu
+dockafe --host tcp://192.168.1.10:2375
+```
 
 ### Volume file access
 
