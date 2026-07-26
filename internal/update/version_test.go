@@ -4,11 +4,11 @@ import "testing"
 
 func TestNormalize(t *testing.T) {
 	cases := map[string]string{
-		"v1.0.1":              "1.0.1",
-		"1.0.1":               "1.0.1",
-		"v1.0.0-3-gc467c45":   "1.0.0",
-		"1.0.1-dirty":         "1.0.1",
-		" V2.3.4 ":            "2.3.4",
+		"v1.0.1":            "1.0.1",
+		"1.0.1":             "1.0.1",
+		"v1.0.0-3-gc467c45": "1.0.0",
+		"1.0.1-dirty":       "1.0.1",
+		" V2.3.4 ":          "2.3.4",
 	}
 	for in, want := range cases {
 		if got := Normalize(in); got != want {
