@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coffee/docker-tui/internal/docker"
+	"github.com/cooffeeRequired/dockafe/internal/docker"
 )
 
 func TestDockerIntegration(t *testing.T) {

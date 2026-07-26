@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/coffee/docker-tui/internal/docker"
+	"github.com/cooffeeRequired/dockafe/internal/docker"
 )
 
 type volNode struct {

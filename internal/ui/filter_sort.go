@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/coffee/docker-tui/internal/docker"
+	"github.com/cooffeeRequired/dockafe/internal/docker"
 )
 
 func (m Model) sortKeysForTab() []SortKey {

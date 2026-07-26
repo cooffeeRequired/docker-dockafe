@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/coffee/docker-tui/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/coffee/docker-tui/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
+  <a href="https://github.com/cooffeeRequired/dockafe/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cooffeeRequired/dockafe/ci.yml?branch=master&style=flat-square&label=CI" alt="CI status"></a>
   <img src="https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go 1.22+">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license">
-  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey?style=flat-square" alt="linux and macOS">
+  <img src="https://img.shields.io/badge/tested-Linux-brightgreen?style=flat-square" alt="Tested on Linux">
 </p>
 
 <p align="center">
@@ -79,14 +79,25 @@
 - Running **Docker daemon** (`DOCKER_HOST` / `docker.sock`)
 - `docker` **CLI** (compose up / rebuild)
 
+### Platform support
+
+| Platform | Status |
+|----------|--------|
+| **Linux** | Tested (Fedora + Docker) |
+| **macOS** | Untested — may work (`?`) |
+| **Windows** | Untested — may work (`?`) |
+
+> [!NOTE]
+> Dockafé is developed and verified on Linux. macOS and Windows are not tested yet; reports and fixes are welcome.
+
 > [!WARNING]
 > Access to the Docker socket is effectively **root** on the host. Only connect to daemons you trust.
 
 ### Build and run
 
 ```bash
-git clone https://github.com/coffee/docker-tui.git
-cd docker-tui
+git clone https://github.com/cooffeeRequired/dockafe.git
+cd dockafe
 make run
 ```
 
@@ -97,7 +108,7 @@ make test vet fmt
 ```
 
 ```bash
-go install github.com/coffee/docker-tui@latest
+go install github.com/cooffeeRequired/dockafe@latest
 ```
 
 **Fedora:** use `make build` or `make install`. A Copr package may follow later.

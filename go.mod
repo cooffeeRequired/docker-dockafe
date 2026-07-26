@@ -1,4 +1,4 @@
-module github.com/coffee/docker-tui
+module github.com/cooffeeRequired/dockafe
 
 go 1.26.5
 

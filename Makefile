@@ -1,7 +1,7 @@
 .PHONY: fmt vet test build run clean install
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 1.0.0)
-LDFLAGS := -s -w -X github.com/coffee/docker-tui/internal/ui.AppVersion=$(VERSION)
+LDFLAGS := -s -w -X github.com/cooffeeRequired/dockafe/internal/ui.AppVersion=$(VERSION)
 
 fmt:
 	gofmt -w ./internal ./main.go

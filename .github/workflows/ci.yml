@@ -26,4 +26,4 @@ jobs:
       - name: test
         run: go test ./...
       - name: build
-        run: go build -ldflags="-s -w -X github.com/coffee/docker-tui/internal/ui.AppVersion=ci" -o dockafe .
+        run: go build -ldflags="-s -w -X github.com/cooffeeRequired/dockafe/internal/ui.AppVersion=ci" -o dockafe .
