@@ -8,7 +8,7 @@ import (
 
 // NewDemo returns a client that serves canned sample data (no Docker socket).
 func NewDemo() *Client {
-	return &Client{demo: true}
+	return &Client{demo: true, hostLabel: "demo"}
 }
 
 // IsDemo reports whether this client serves fake sample data.
@@ -26,17 +26,17 @@ func (c *Client) demoGuard() error {
 func demoContainers() []ContainerInfo {
 	now := time.Now().Add(-48 * time.Hour)
 	return []ContainerInfo{
-		ctr("a1b2c3d4e5f6", "web", "shop-api", "web", "nginx:1.27-alpine", "Up 2 hours", true, "0.0.0.0:8080->80/tcp", "0.4%", "128.0MiB / 7.8GiB", 0.4, 134217728, now),
-		ctr("b2c3d4e5f6a7", "api", "shop-api", "api", "shop-api:1.2.0", "Up 2 hours", true, "0.0.0.0:3000->3000/tcp", "1.2%", "256.4MiB / 7.8GiB", 1.2, 268435456, now),
-		ctr("c3d4e5f6a7b8", "db", "shop-api", "db", "postgres:16-alpine", "Up 2 hours", true, "127.0.0.1:5432->5432/tcp", "0.8%", "312.1MiB / 7.8GiB", 0.8, 327155712, now),
-		ctr("d4e5f6a7b8c9", "cache", "shop-api", "cache", "redis:7-alpine", "Up 2 hours", true, "127.0.0.1:6379->6379/tcp", "0.1%", "24.5MiB / 7.8GiB", 0.1, 25690112, now),
+		ctr("a1b2c3d4e5f6", "web", "shop-api", "web", "nginx:1.27-alpine", "Up 2 hours (healthy)", true, "0.0.0.0:8080->80/tcp", "0.4%", "128.0MiB / 7.8GiB", 0.4, 134217728, now),
+		ctr("b2c3d4e5f6a7", "api", "shop-api", "api", "shop-api:1.2.0", "Up 2 hours (healthy)", true, "0.0.0.0:3000->3000/tcp", "1.2%", "256.4MiB / 7.8GiB", 1.2, 268435456, now),
+		ctr("c3d4e5f6a7b8", "db", "shop-api", "db", "postgres:16-alpine", "Up 2 hours (unhealthy)", true, "127.0.0.1:5432->5432/tcp", "0.8%", "312.1MiB / 7.8GiB", 0.8, 327155712, now),
+		ctr("d4e5f6a7b8c9", "cache", "shop-api", "cache", "redis:7-alpine", "Up 2 hours (healthy)", true, "127.0.0.1:6379->6379/tcp", "0.1%", "24.5MiB / 7.8GiB", 0.1, 25690112, now),
 		ctr("e5f6a7b8c9d0", "grafana", "observability", "grafana", "grafana/grafana:11.0.0", "Up 5 hours", true, "0.0.0.0:3001->3000/tcp", "0.3%", "189.2MiB / 7.8GiB", 0.3, 198180864, now),
 		ctr("f6a7b8c9d0e1", "prometheus", "observability", "prometheus", "prom/prometheus:v2.53.0", "Up 5 hours", true, "0.0.0.0:9090->9090/tcp", "0.6%", "98.7MiB / 7.8GiB", 0.6, 103546880, now),
 		ctr("a7b8c9d0e1f2", "loki", "observability", "loki", "grafana/loki:3.0.0", "Exited (0) 10 minutes ago", false, "", "-", "-", 0, 0, now),
 		ctr("b8c9d0e1f2a3", "worker", "jobs", "worker", "jobs-worker:0.9.1", "Up 1 hour", true, "", "2.1%", "410.0MiB / 7.8GiB", 2.1, 429916160, now),
 		ctr("c9d0e1f2a3b4", "beat", "jobs", "beat", "jobs-worker:0.9.1", "Up 1 hour", true, "", "0.2%", "64.0MiB / 7.8GiB", 0.2, 67108864, now),
 		ctr("d0e1f2a3b4c5", "mailhog", "", "", "mailhog/mailhog:v1.0.1", "Up 3 hours", true, "0.0.0.0:8025->8025/tcp", "0.0%", "12.3MiB / 7.8GiB", 0.0, 12897484, now),
-		ctr("e1f2a3b4c5d6", "old-redis", "legacy-stack", "redis", "redis:6-alpine", "Exited (1) 2 days ago", false, "", "-", "-", 0, 0, now.Add(-96*time.Hour)),
+		ctr("e1f2a3b4c5d6", "old-redis", "legacy-stack", "redis", "redis:6-alpine", "Exited (137) 2 days ago", false, "", "-", "-", 0, 0, now.Add(-96*time.Hour)),
 		ctr("f2a3b4c5d6e7", "old-api", "legacy-stack", "api", "legacy-api:0.3.0", "Exited (1) 2 days ago", false, "", "-", "-", 0, 0, now.Add(-96*time.Hour)),
 	}
 }
@@ -47,20 +47,22 @@ func ctr(id, name, project, service, image, status string, running bool, ports, 
 		state = "running"
 	}
 	return ContainerInfo{
-		ID:       id,
-		Name:     name,
-		Image:    image,
-		Status:   status,
-		State:    state,
-		Project:  project,
-		Service:  service,
-		Ports:    ports,
-		CPU:      cpu,
-		Mem:      mem,
-		CPUVal:   cpuVal,
-		MemBytes: memBytes,
-		Created:  created,
-		Running:  running,
+		ID:        id,
+		Name:      name,
+		Image:     image,
+		Status:    status,
+		State:     state,
+		Health:    ParseHealth(status),
+		OOMKilled: ParseOOMHint(status),
+		Project:   project,
+		Service:   service,
+		Ports:     ports,
+		CPU:       cpu,
+		Mem:       mem,
+		CPUVal:    cpuVal,
+		MemBytes:  memBytes,
+		Created:   created,
+		Running:   running,
 	}
 }
 

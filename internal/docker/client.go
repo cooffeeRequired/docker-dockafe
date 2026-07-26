@@ -23,16 +23,9 @@ const composeProjectLabel = "com.docker.compose.project"
 const composeServiceLabel = "com.docker.compose.service"
 
 type Client struct {
-	cli  *client.Client
-	demo bool
-}
-
-func New() (*Client, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, err
-	}
-	return &Client{cli: cli}, nil
+	cli       *client.Client
+	demo      bool
+	hostLabel string
 }
 
 func (c *Client) Close() error {
@@ -51,20 +44,22 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 type ContainerInfo struct {
-	ID       string
-	Name     string
-	Image    string
-	Status   string
-	State    string
-	Project  string
-	Service  string
-	Ports    string
-	CPU      string
-	Mem      string
-	CPUVal   float64
-	MemBytes uint64
-	Created  time.Time
-	Running  bool
+	ID        string
+	Name      string
+	Image     string
+	Status    string
+	State     string
+	Health    string // healthy|unhealthy|starting|""
+	OOMKilled bool
+	Project   string
+	Service   string
+	Ports     string
+	CPU       string
+	Mem       string
+	CPUVal    float64
+	MemBytes  uint64
+	Created   time.Time
+	Running   bool
 }
 
 type ComposeGroup struct {
@@ -122,18 +117,20 @@ func (c *Client) ListContainers(ctx context.Context, withStats bool) ([]Containe
 		project := item.Labels[composeProjectLabel]
 		service := item.Labels[composeServiceLabel]
 		info := ContainerInfo{
-			ID:      item.ID,
-			Name:    name,
-			Image:   item.Image,
-			Status:  item.Status,
-			State:   string(item.State),
-			Project: project,
-			Service: service,
-			Ports:   formatPorts(item.Ports),
-			CPU:     "-",
-			Mem:     "-",
-			Created: time.Unix(item.Created, 0),
-			Running: item.State == container.StateRunning,
+			ID:        item.ID,
+			Name:      name,
+			Image:     item.Image,
+			Status:    item.Status,
+			State:     string(item.State),
+			Health:    ParseHealth(item.Status),
+			OOMKilled: ParseOOMHint(item.Status),
+			Project:   project,
+			Service:   service,
+			Ports:     formatPorts(item.Ports),
+			CPU:       "-",
+			Mem:       "-",
+			Created:   time.Unix(item.Created, 0),
+			Running:   item.State == container.StateRunning,
 		}
 		out = append(out, info)
 	}
