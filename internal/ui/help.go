@@ -270,6 +270,8 @@ func helpTextFull() string {
 	b.WriteByte('\n')
 	b.WriteString(row("r", "refresh"))
 	b.WriteByte('\n')
+	b.WriteString(row("U", "check / install update from GitHub Releases"))
+	b.WriteByte('\n')
 	b.WriteByte('\n')
 
 	b.WriteString(sec("Create"))
