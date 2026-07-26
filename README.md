@@ -68,6 +68,7 @@
 | **Editors** | Helix, Neovim, or VS Code (`--wait`) with LSP |
 | **Filters** | `/` text filter, `o`/`O` sort, `F` running / in-use only |
 | **Safe writes** | Confirm before saving volume files; remote Docker never writes local host paths |
+| **Updater** | Startup check against GitHub Releases; `U` installs the latest binary |
 
 ---
 
@@ -134,6 +135,7 @@ Press <kbd>?</kbd> inside the app for the full reference.
 | Logs | <kbd>l</kbd>, <kbd>/</kbd> find, <kbd>Ctrl</kbd>+<kbd>G</kbd> regex |
 | Volume files | <kbd>f</kbd> tree, <kbd>Tab</kbd> focus, <kbd>e</kbd> edit, <kbd>L</kbd> lint, <kbd>o</kbd> open dir |
 | Quit | <kbd>q</kbd> |
+| Update | <kbd>U</kbd> check / install from GitHub Releases |
 
 ---
 
