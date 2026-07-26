@@ -13,11 +13,25 @@ type updateCheckMsg struct {
 	info update.Info
 }
 
+type updateApplyMsg struct {
+	path string
+	err  error
+}
+
 func checkUpdateCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return updateCheckMsg{info: update.CheckLatest(ctx, AppVersion, nil)}
+	}
+}
+
+func applyUpdateCmd(assetURL string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		path, err := update.Apply(ctx, assetURL, nil)
+		return updateApplyMsg{path: path, err: err}
 	}
 }
 
@@ -42,5 +56,34 @@ func (m Model) updateBadge() string {
 	if !m.updateAvailable || m.updateLatest == "" {
 		return ""
 	}
-	return updateBadgeStyle.Render("UPDATE " + m.updateLatest + " · U ")
+	return updateBadgeStyle.Render(" ↑ " + m.updateLatest + " · U ")
+}
+
+func (m Model) askUpdate() (tea.Model, tea.Cmd) {
+	if m.busy {
+		return m, nil
+	}
+	if !m.updateAvailable {
+		m.status = "checking for updates…"
+		return m, checkUpdateCmd()
+	}
+	if m.updateAssetURL == "" {
+		m.status = "update " + m.updateLatest + " has no download asset"
+		if m.updateURL != "" {
+			m.errMsg = "see " + m.updateURL
+		}
+		return m, nil
+	}
+	m.confirm = confirmUpdate
+	m.confirmTarget = m.updateLatest
+	m.confirmLabel = "Install dockafe " + m.updateLatest + " over current binary?"
+	m.mode = ModeConfirm
+	return m, nil
+}
+
+func (m Model) doUpdate() (tea.Model, tea.Cmd) {
+	m.busy = true
+	m.status = "downloading " + m.updateLatest + "…"
+	m.errMsg = ""
+	return m, applyUpdateCmd(m.updateAssetURL)
 }

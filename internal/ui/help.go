@@ -59,6 +59,7 @@ func helpFooterList(tab Tab) string {
 		{"F", filterLabel},
 		{"1-5/[ ]", "tabs"},
 		{"r", "refresh"},
+		{"U", "update"},
 		{"q", "quit"},
 	})
 

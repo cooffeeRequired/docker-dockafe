@@ -57,6 +57,7 @@ const (
 	confirmPrune
 	confirmKill
 	confirmVolWrite
+	confirmUpdate
 )
 
 type SortKey int

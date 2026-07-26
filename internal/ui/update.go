@@ -197,7 +197,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateCheckMsg:
 		m.applyUpdateCheck(msg)
+		if m.updateAvailable {
+			m.status = "update " + m.updateLatest + " available · press U"
+		} else if m.updateErr == "" && m.updateLatest != "" {
+			if m.status == "checking for updates…" {
+				m.status = "up to date (" + AppVersion + ")"
+			}
+		} else if m.updateErr != "" && m.status == "checking for updates…" {
+			m.status = "update check failed"
+		}
 		return m, nil
+
+	case updateApplyMsg:
+		m.busy = false
+		if msg.err != nil {
+			m.errMsg = msg.err.Error()
+			m.status = "update failed"
+			return m, nil
+		}
+		m.updateAvailable = false
+		m.status = "updated to " + m.updateLatest + " · restarting…"
+		m.errMsg = ""
+		return m, tea.Quit
 
 	case logsTickMsg:
 		if m.mode == ModeLogs && m.logsFollow && !m.busy && m.logsTarget != "" {
@@ -423,6 +444,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "U":
+			return m.askUpdate()
 		case "enter", " ", "esc":
 			if m.splashDataReady {
 				m.splashMinDone = true
@@ -688,6 +711,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		m.status = "refreshing…"
 		return m, m.refresh(true)
+	case "U":
+		return m.askUpdate()
 	case "s":
 		return m.startSelected()
 	case "x":
@@ -824,6 +849,8 @@ func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.doKill(target)
 		case confirmPrune:
 			return m.doPrune(target)
+		case confirmUpdate:
+			return m.doUpdate()
 		}
 	case "n", "N", "esc":
 		m.confirm = confirmNone
