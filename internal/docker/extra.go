@@ -146,7 +146,8 @@ func (c *Client) SystemInfo(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf(
-		"Docker %s · %s/%s · containers %d (running %d) · images %d · CPUs %d · Mem %s",
+		"host %s · Docker %s · %s/%s · containers %d (running %d) · images %d · CPUs %d · Mem %s",
+		c.Host(),
 		info.ServerVersion,
 		info.OperatingSystem,
 		info.Architecture,
