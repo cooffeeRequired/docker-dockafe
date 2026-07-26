@@ -110,12 +110,10 @@ func (spec ComposeProjectSpec) RenderYAML() string {
 	b.WriteString("name: " + yamlQuote(spec.Name) + "\n")
 	b.WriteString("services:\n")
 	for _, svc := range spec.Services {
-		b.WriteString("  " + svc.Name + ":\n")
+		b.WriteString("  " + yamlKey(svc.Name) + ":\n")
 		b.WriteString("    image: " + yamlQuote(svc.Image) + "\n")
-		if svc.Restart == "" {
-			svc.Restart = "unless-stopped"
-		}
-		b.WriteString("    restart: " + svc.Restart + "\n")
+		restart := normalizeRestartPolicy(svc.Restart)
+		b.WriteString("    restart: " + restart + "\n")
 		if len(svc.Ports) > 0 {
 			b.WriteString("    ports:\n")
 			for _, p := range svc.Ports {
@@ -159,7 +157,7 @@ func (spec ComposeProjectSpec) RenderYAML() string {
 				if d == "" {
 					continue
 				}
-				b.WriteString("      - " + d + "\n")
+				b.WriteString("      - " + yamlQuote(d) + "\n")
 			}
 		}
 		if strings.TrimSpace(svc.Command) != "" {
@@ -230,8 +228,50 @@ func yamlQuote(s string) string {
 		return `""`
 	}
 	if strings.ContainsAny(s, ":#{}[],&*?|-<>=!%@`\"'\n") || strings.Contains(s, " ") {
+		s = strings.ReplaceAll(s, `\`, `\\`)
 		s = strings.ReplaceAll(s, `"`, `\"`)
 		return `"` + s + `"`
 	}
 	return s
+}
+
+// yamlKey formats a mapping key; unsafe characters are double-quoted.
+func yamlKey(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return `"svc"`
+	}
+	if yamlSafeKey(s) {
+		return s
+	}
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
+}
+
+func yamlSafeKey(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.'
+		if !ok {
+			return false
+		}
+		if i == 0 && (r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeRestartPolicy(s string) string {
+	switch strings.TrimSpace(strings.ToLower(s)) {
+	case "", "unless-stopped":
+		return "unless-stopped"
+	case "no", "always", "on-failure":
+		return strings.TrimSpace(strings.ToLower(s))
+	default:
+		return "unless-stopped"
+	}
 }

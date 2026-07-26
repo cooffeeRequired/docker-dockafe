@@ -23,7 +23,8 @@ const composeProjectLabel = "com.docker.compose.project"
 const composeServiceLabel = "com.docker.compose.service"
 
 type Client struct {
-	cli *client.Client
+	cli  *client.Client
+	demo bool
 }
 
 func New() (*Client, error) {
@@ -35,10 +36,16 @@ func New() (*Client, error) {
 }
 
 func (c *Client) Close() error {
+	if c.IsDemo() || c.cli == nil {
+		return nil
+	}
 	return c.cli.Close()
 }
 
 func (c *Client) Ping(ctx context.Context) error {
+	if c.IsDemo() {
+		return nil
+	}
 	_, err := c.cli.Ping(ctx)
 	return err
 }
@@ -101,6 +108,9 @@ type NetworkInfo struct {
 }
 
 func (c *Client) ListContainers(ctx context.Context, withStats bool) ([]ContainerInfo, error) {
+	if c.IsDemo() {
+		return c.listDemoContainers(ctx, withStats)
+	}
 	list, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
@@ -142,6 +152,9 @@ func (c *Client) ListContainers(ctx context.Context, withStats bool) ([]Containe
 }
 
 func (c *Client) ListComposeGroups(ctx context.Context, withStats bool) ([]ComposeGroup, error) {
+	if c.IsDemo() {
+		return c.listDemoComposeGroups(ctx, withStats)
+	}
 	containers, err := c.ListContainers(ctx, withStats)
 	if err != nil {
 		return nil, err
@@ -180,6 +193,9 @@ func (c *Client) ListComposeGroups(ctx context.Context, withStats bool) ([]Compo
 }
 
 func (c *Client) ListImages(ctx context.Context) ([]ImageInfo, error) {
+	if c.IsDemo() {
+		return c.listDemoImages(ctx)
+	}
 	list, err := c.cli.ImageList(ctx, image.ListOptions{All: false})
 	if err != nil {
 		return nil, err
@@ -206,6 +222,9 @@ func (c *Client) ListImages(ctx context.Context) ([]ImageInfo, error) {
 }
 
 func (c *Client) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
+	if c.IsDemo() {
+		return c.listDemoVolumes(ctx)
+	}
 	resp, err := c.cli.VolumeList(ctx, volume.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -267,6 +286,9 @@ func appendUnique(list []string, s string) []string {
 }
 
 func (c *Client) ListNetworks(ctx context.Context) ([]NetworkInfo, error) {
+	if c.IsDemo() {
+		return c.listDemoNetworks(ctx)
+	}
 	list, err := c.cli.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -298,20 +320,32 @@ func (c *Client) ListNetworks(ctx context.Context) ([]NetworkInfo, error) {
 }
 
 func (c *Client) StartContainer(ctx context.Context, id string) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	return c.cli.ContainerStart(ctx, id, container.StartOptions{})
 }
 
 func (c *Client) StopContainer(ctx context.Context, id string) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	timeout := 10
 	return c.cli.ContainerStop(ctx, id, container.StopOptions{Timeout: &timeout})
 }
 
 func (c *Client) RestartContainer(ctx context.Context, id string) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	timeout := 10
 	return c.cli.ContainerRestart(ctx, id, container.StopOptions{Timeout: &timeout})
 }
 
 func (c *Client) RemoveContainer(ctx context.Context, id string, force bool) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	return c.cli.ContainerRemove(ctx, id, container.RemoveOptions{Force: force, RemoveVolumes: false})
 }
 
@@ -369,6 +403,9 @@ func (c *Client) RemoveCompose(ctx context.Context, project string, force bool) 
 }
 
 func (c *Client) RebuildCompose(ctx context.Context, project string) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	if project == "" || project == "(standalone)" {
 		return fmt.Errorf("rebuild only works for compose projects")
 	}
@@ -385,15 +422,24 @@ func (c *Client) RebuildCompose(ctx context.Context, project string) error {
 }
 
 func (c *Client) RemoveImage(ctx context.Context, id string, force bool) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	_, err := c.cli.ImageRemove(ctx, id, image.RemoveOptions{Force: force, PruneChildren: true})
 	return err
 }
 
 func (c *Client) RemoveVolume(ctx context.Context, name string, force bool) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	return c.cli.VolumeRemove(ctx, name, force)
 }
 
 func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
+	if err := c.demoGuard(); err != nil {
+		return err
+	}
 	return c.cli.NetworkRemove(ctx, id)
 }
 

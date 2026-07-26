@@ -672,14 +672,12 @@ func (m Model) openVolInEditor(rel string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 
-		if host, ok := client.HostPathForVolumeFile(ctx, vol, rel); ok {
-			return volEditorLaunchMsg{rel: rel, editPath: host, tmpFile: false}
-		}
+		// Always edit a temp copy so host-mode files are not modified until confirm.
 		data, err := client.ReadVolumeFile(ctx, vol, rel)
 		if err != nil {
 			return volEditorDoneMsg{path: rel, err: err}
 		}
-		tmp, err := os.CreateTemp("", "dockafe-vol-*"+filepath.Ext(rel))
+		tmp, err := os.CreateTemp("", "dockafe-vol-*"+safeTempExt(rel))
 		if err != nil {
 			return volEditorDoneMsg{path: rel, err: err}
 		}
@@ -691,6 +689,19 @@ func (m Model) openVolInEditor(rel string) tea.Cmd {
 		_ = tmp.Close()
 		return volEditorLaunchMsg{rel: rel, editPath: tmp.Name(), tmpFile: true}
 	}
+}
+
+func safeTempExt(rel string) string {
+	ext := filepath.Ext(rel)
+	if ext == "" || len(ext) > 16 || strings.ContainsAny(ext, "/\\:") {
+		return ".tmp"
+	}
+	for _, r := range ext[1:] {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return ".tmp"
+		}
+	}
+	return ext
 }
 
 func (m Model) openVolInFileManager() (tea.Model, tea.Cmd) {
@@ -707,15 +718,13 @@ func (m Model) openVolInFileManager() (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	host, ok := m.client.HostPathForVolumeFile(ctx, m.volName, rel)
-	if !ok {
-		// try volume root
-		if mp, ok2 := m.client.VolumeHostAccessible(ctx, m.volName); ok2 {
-			host = mp
-			if rel != "" {
-				host = filepath.Join(mp, filepath.FromSlash(rel))
-			}
-			ok = true
+	if !ok && rel != "" {
+		// Fall back to containing directory when the leaf path is missing.
+		parent := path.Dir(rel)
+		if parent == "." {
+			parent = ""
 		}
+		host, ok = m.client.HostPathForVolumeFile(ctx, m.volName, parent)
 	}
 	if !ok {
 		m.status = "open in file manager only on local host mount"

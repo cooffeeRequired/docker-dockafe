@@ -53,7 +53,7 @@
   <img src="docs/assets/screenshot-volume-files.png" alt="Dockafé volume file browser with tree and preview panes" width="900">
 </p>
 
-> Screenshots captured from a live session on Fedora with Docker 29.
+> Screenshots use **demo data** (`dockafe --demo` / `make shots`) — not a live host.
 
 ---
 
@@ -101,6 +101,13 @@ cd dockafe
 make run
 ```
 
+Sample data only (no Docker socket — safe for screenshots):
+
+```bash
+make demo          # ./dockafe --demo
+make shots         # regenerate docs/assets/screenshot-*.png
+```
+
 ```bash
 make build        # ./dockafe
 make install      # $(go env GOPATH)/bin/dockafe
@@ -136,13 +143,13 @@ Press <kbd>?</kbd> inside the app for the full reference.
 |----------|---------|
 | `DOCKER_HOST` | Docker daemon address |
 | `DOCKAFE_EDITOR` / `EDITOR` / `VISUAL` | External editor for volume files. `code` / `codium` get `--wait` automatically |
-| `DOCKAFE_BUSYBOX_IMAGE` | Helper image when host mount is unavailable (default `busybox:1.36.1`) |
+| `DOCKAFE_BUSYBOX_IMAGE` | Helper image when host mount is unavailable (default `busybox:1.36.1`). Treat as trusted — it is pulled/run with the volume bind |
 
 ### Volume file access
 
-- **Local** readable mountpoint → `via host`
+- **Local** readable mountpoint → `via host` (paths are resolved; symlinks that escape the mount are rejected)
 - **Remote** daemon or locked mount → `busybox` helper → `via docker`
-- Saving from the editor always asks for confirmation
+- Saving from the editor always asks for confirmation (edits happen on a temp copy first)
 
 ---
 

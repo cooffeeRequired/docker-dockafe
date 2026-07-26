@@ -84,7 +84,7 @@ func (m *Model) applyLogSearch() {
 	var re *regexp.Regexp
 	if m.logsSearchRegex {
 		var err error
-		re, err = regexp.Compile("(?i)" + q)
+		re, err = compileLogRegex(q)
 		if err != nil {
 			m.logsSearchErr = err.Error()
 			m.status = "invalid regex: " + err.Error()
@@ -94,7 +94,7 @@ func (m *Model) applyLogSearch() {
 
 	matches := make([]int, 0)
 	for i, line := range lines {
-		plain := stripANSI(line)
+		plain := truncateForLogMatch(stripANSI(line))
 		ok := false
 		if m.logsSearchRegex {
 			ok = re.MatchString(plain)
@@ -134,7 +134,7 @@ func (m *Model) renderLogSearchView() {
 	q := m.logsSearchQuery
 	var re *regexp.Regexp
 	if m.logsSearchRegex && q != "" {
-		re, _ = regexp.Compile("(?i)" + q)
+		re, _ = compileLogRegex(q)
 	}
 
 	out := make([]string, 0, len(lines))
@@ -159,7 +159,7 @@ func (m Model) currentSearchLine() int {
 }
 
 func highlightLogLine(line, q string, re *regexp.Regexp, current bool) string {
-	plain := stripANSI(line)
+	plain := truncateForLogMatch(stripANSI(line))
 	bg := lipgloss.Color("238")
 	if current {
 		bg = lipgloss.Color("62")
@@ -179,6 +179,27 @@ func highlightLogLine(line, q string, re *regexp.Regexp, current bool) string {
 		marker = "▶ "
 	}
 	return lineStyle.Render(marker+plain) + lipgloss.NewStyle().UnsetBackground().Render("")
+}
+
+const maxLogMatchBytes = 8192
+
+func truncateForLogMatch(s string) string {
+	if len(s) <= maxLogMatchBytes {
+		return s
+	}
+	return s[:maxLogMatchBytes]
+}
+
+// compileLogRegex builds a case-insensitive RE2 pattern (linear-time in Go).
+func compileLogRegex(q string) (*regexp.Regexp, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, fmt.Errorf("empty pattern")
+	}
+	if len(q) > 200 {
+		return nil, fmt.Errorf("pattern too long")
+	}
+	return regexp.Compile("(?i)" + q)
 }
 
 func highlightPlainIgnoreCase(s, q string) string {

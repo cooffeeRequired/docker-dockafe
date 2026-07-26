@@ -36,6 +36,9 @@ func volumeHelperImage() string {
 
 // IsRemoteDaemon reports whether the Docker API points at a non-local unix socket.
 func (c *Client) IsRemoteDaemon() bool {
+	if c.IsDemo() {
+		return false
+	}
 	host := c.cli.DaemonHost()
 	if host == "" {
 		host = os.Getenv("DOCKER_HOST")
@@ -61,6 +64,9 @@ func (c *Client) VolumeAccessMode(ctx context.Context, name string) string {
 
 // VolumeMountpoint returns the host mountpoint for a named volume.
 func (c *Client) VolumeMountpoint(ctx context.Context, name string) (string, error) {
+	if c.IsDemo() {
+		return "/var/lib/docker/volumes/" + name + "/_data", nil
+	}
 	info, err := c.cli.VolumeInspect(ctx, name)
 	if err != nil {
 		return "", err
@@ -71,6 +77,9 @@ func (c *Client) VolumeMountpoint(ctx context.Context, name string) (string, err
 // VolumeHostAccessible reports whether the volume mountpoint can be listed as this user.
 // Always false for remote daemons (avoids writing to a coincidental local path).
 func (c *Client) VolumeHostAccessible(ctx context.Context, name string) (string, bool) {
+	if c.IsDemo() {
+		return "", false
+	}
 	if c.IsRemoteDaemon() {
 		return "", false
 	}
@@ -87,6 +96,17 @@ func (c *Client) VolumeHostAccessible(ctx context.Context, name string) (string,
 // ListVolumeDir lists entries in a volume directory (path relative to volume root).
 func (c *Client) ListVolumeDir(ctx context.Context, volumeName, rel string) ([]VolumeEntry, error) {
 	rel = CleanVolPath(rel)
+	if c.IsDemo() {
+		if rel == "" {
+			return DemoVolumeEntries(), nil
+		}
+		if rel == "base" || rel == "global" || rel == "pg_wal" || rel == "docker-entrypoint-initdb.d" {
+			return []VolumeEntry{
+				{Name: ".keep", Path: path.Join(rel, ".keep"), IsDir: false, Size: 0},
+			}, nil
+		}
+		return nil, fmt.Errorf("not a directory")
+	}
 	if mp, ok := c.VolumeHostAccessible(ctx, volumeName); ok {
 		return listHostDir(mp, rel)
 	}
@@ -99,21 +119,39 @@ func (c *Client) ReadVolumeFile(ctx context.Context, volumeName, rel string) ([]
 	if rel == "" || strings.HasSuffix(rel, "/") {
 		return nil, fmt.Errorf("not a file path")
 	}
+	if c.IsDemo() {
+		return []byte(DemoVolumeFile(rel)), nil
+	}
 	if mp, ok := c.VolumeHostAccessible(ctx, volumeName); ok {
-		return os.ReadFile(filepath.Join(mp, filepath.FromSlash(rel)))
+		full, err := resolveContainedHostPath(mp, rel)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(full)
 	}
 	return c.readVolumeFileDocker(ctx, volumeName, rel)
 }
 
 // WriteVolumeFile writes a file into a volume.
 func (c *Client) WriteVolumeFile(ctx context.Context, volumeName, rel string, data []byte) error {
+	if c.IsDemo() {
+		return c.demoGuard()
+	}
 	rel = CleanVolPath(rel)
 	if rel == "" {
 		return fmt.Errorf("empty path")
 	}
 	if mp, ok := c.VolumeHostAccessible(ctx, volumeName); ok {
-		full := filepath.Join(mp, filepath.FromSlash(rel))
+		full, err := resolveContainedHostPath(mp, rel)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return err
+		}
+		// Re-check after mkdir in case a symlink race appeared under the mount.
+		full, err = resolveContainedHostPath(mp, rel)
+		if err != nil {
 			return err
 		}
 		return os.WriteFile(full, data, 0o644)
@@ -121,14 +159,19 @@ func (c *Client) WriteVolumeFile(ctx context.Context, volumeName, rel string, da
 	return c.writeVolumeFileDocker(ctx, volumeName, rel, data)
 }
 
-// HostPathForVolumeFile returns a host path if the volume is directly readable.
+// HostPathForVolumeFile returns a host path if the volume is directly readable
+// and the resolved path stays under the mountpoint (no symlink escape).
 func (c *Client) HostPathForVolumeFile(ctx context.Context, volumeName, rel string) (string, bool) {
 	rel = CleanVolPath(rel)
 	mp, ok := c.VolumeHostAccessible(ctx, volumeName)
 	if !ok {
 		return "", false
 	}
-	return filepath.Join(mp, filepath.FromSlash(rel)), true
+	full, err := resolveContainedHostPath(mp, rel)
+	if err != nil {
+		return "", false
+	}
+	return full, true
 }
 
 // CleanVolPath normalizes a path relative to the volume root.
@@ -144,10 +187,88 @@ func CleanVolPath(rel string) string {
 	return rel
 }
 
-func listHostDir(mountpoint, rel string) ([]VolumeEntry, error) {
-	dir := mountpoint
+// resolveContainedHostPath joins mountpoint+rel and ensures the result (after
+// evaluating existing symlinks) stays under the mountpoint.
+func resolveContainedHostPath(mountpoint, rel string) (string, error) {
+	mp, err := absEvalPath(mountpoint)
+	if err != nil {
+		return "", err
+	}
+	rel = CleanVolPath(rel)
+	target := mp
 	if rel != "" {
-		dir = filepath.Join(mountpoint, filepath.FromSlash(rel))
+		target = filepath.Join(mp, filepath.FromSlash(rel))
+	}
+	resolved, err := resolveExistingPrefix(mp, target)
+	if err != nil {
+		return "", err
+	}
+	if !pathIsUnder(mp, resolved) {
+		return "", fmt.Errorf("path escapes volume mountpoint")
+	}
+	return resolved, nil
+}
+
+func absEvalPath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	if eval, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = eval
+	}
+	return filepath.Clean(abs), nil
+}
+
+// resolveExistingPrefix EvalSymlinks the longest existing prefix of target,
+// then re-appends any missing trailing components.
+func resolveExistingPrefix(root, target string) (string, error) {
+	target = filepath.Clean(target)
+	cur := target
+	var missing []string
+	for {
+		if _, err := os.Lstat(cur); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		if cur == root || filepath.Dir(cur) == cur {
+			return "", fmt.Errorf("path outside volume mountpoint")
+		}
+		missing = append([]string{filepath.Base(cur)}, missing...)
+		cur = filepath.Dir(cur)
+	}
+	resolved, err := filepath.EvalSymlinks(cur)
+	if err != nil {
+		return "", err
+	}
+	resolved = filepath.Clean(resolved)
+	for _, part := range missing {
+		if part == ".." {
+			return "", fmt.Errorf("path escapes volume mountpoint")
+		}
+		resolved = filepath.Join(resolved, part)
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func pathIsUnder(root, p string) bool {
+	root = filepath.Clean(root)
+	p = filepath.Clean(p)
+	if p == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+func listHostDir(mountpoint, rel string) ([]VolumeEntry, error) {
+	dir, err := resolveContainedHostPath(mountpoint, rel)
+	if err != nil {
+		return nil, err
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -195,6 +316,9 @@ func (c *Client) ensureBusybox(ctx context.Context) error {
 }
 
 func (c *Client) runVolumeCmd(ctx context.Context, volumeName string, rw bool, cmd []string) (string, error) {
+	if err := validateVolumeName(volumeName); err != nil {
+		return "", err
+	}
 	if err := c.ensureBusybox(ctx); err != nil {
 		return "", err
 	}
@@ -204,9 +328,10 @@ func (c *Client) runVolumeCmd(ctx context.Context, volumeName string, rw bool, c
 		mode = "rw"
 	}
 	resp, err := c.cli.ContainerCreate(ctx, &container.Config{
-		Image: img,
-		Cmd:   cmd,
-		Tty:   false,
+		Image:      img,
+		Cmd:        cmd,
+		Tty:        false,
+		Entrypoint: []string{},
 	}, &container.HostConfig{
 		Binds:      []string{volumeName + ":/vol:" + mode},
 		AutoRemove: false,
@@ -300,14 +425,18 @@ func (c *Client) readVolumeFileDocker(ctx context.Context, volumeName, rel strin
 }
 
 func (c *Client) writeVolumeFileDocker(ctx context.Context, volumeName, rel string, data []byte) error {
+	if err := validateVolumeName(volumeName); err != nil {
+		return err
+	}
 	if err := c.ensureBusybox(ctx); err != nil {
 		return err
 	}
 	img := volumeHelperImage()
 	parent := path.Dir(path.Join("/vol", rel))
 	resp, err := c.cli.ContainerCreate(ctx, &container.Config{
-		Image: img,
-		Cmd:   []string{"sh", "-c", "mkdir -p " + ShellQuote(parent) + " && sleep 60"},
+		Image:      img,
+		Cmd:        []string{"sh", "-c", "mkdir -p " + ShellQuote(parent) + " && sleep 60"},
+		Entrypoint: []string{},
 	}, &container.HostConfig{
 		Binds: []string{volumeName + ":/vol:rw"},
 	}, nil, nil, "")
@@ -356,4 +485,16 @@ func sortVolumeEntries(entries []VolumeEntry) {
 // ShellQuote wraps s for safe use inside single-quoted shell strings.
 func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+}
+
+// validateVolumeName rejects names that would break Docker bind syntax (":").
+func validateVolumeName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("empty volume name")
+	}
+	if strings.ContainsAny(name, ":/") {
+		return fmt.Errorf("invalid volume name")
+	}
+	return nil
 }

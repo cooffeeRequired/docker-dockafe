@@ -138,6 +138,9 @@ func (c *Client) PruneContainers(ctx context.Context) (string, error) {
 }
 
 func (c *Client) SystemInfo(ctx context.Context) (string, error) {
+	if c.IsDemo() {
+		return c.demoSystemInfo(ctx)
+	}
 	info, err := c.cli.Info(ctx)
 	if err != nil {
 		return "", err
