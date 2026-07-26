@@ -96,6 +96,9 @@ func (m Model) viewSplash() string {
 	brand := brandStyle.Render(AppName) + "  " + mutedStyle.Render("v"+AppVersion)
 	tagline := tagStyle.Render("containers · compose · control")
 	byline := mutedStyle.Render("Docker + café — brewed for the terminal")
+	if m.updateAvailable {
+		byline = updateBadgeStyle.Render("update " + m.updateLatest + " available · press U")
+	}
 
 	var statusLine string
 	switch {

@@ -164,6 +164,12 @@ type Model struct {
 	volPendingData []byte
 	volReturnMode  Mode // mode to restore after confirm
 
+	updateAvailable bool
+	updateLatest    string
+	updateURL       string
+	updateAssetURL  string
+	updateErr       string
+
 	// Async generation tokens (ignore stale responses)
 	dataGen uint64
 	logsGen uint64
@@ -272,7 +278,7 @@ func logsKeyMap() viewport.KeyMap {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.refreshGen(true, m.dataGen), tickCmd(), splashTimerCmd(), splashAnimCmd())
+	return tea.Batch(m.refreshGen(true, m.dataGen), tickCmd(), splashTimerCmd(), splashAnimCmd(), checkUpdateCmd())
 }
 
 func tickCmd() tea.Cmd {
@@ -323,6 +329,11 @@ var (
 			Padding(0, 1)
 	metaStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245"))
+	updateBadgeStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("232")).
+				Background(lipgloss.Color("214")).
+				Padding(0, 1)
 )
 
 func tableStyles() table.Styles {

@@ -195,6 +195,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case updateCheckMsg:
+		m.applyUpdateCheck(msg)
+		return m, nil
+
 	case logsTickMsg:
 		if m.mode == ModeLogs && m.logsFollow && !m.busy && m.logsTarget != "" {
 			m.logsGen++
