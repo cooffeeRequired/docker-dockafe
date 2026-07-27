@@ -30,7 +30,7 @@ const (
 const AppName = "Dockafé"
 
 // AppVersion is set at link time via -ldflags "-X …AppVersion=…".
-var AppVersion = "1.0.0"
+var AppVersion = "1.0.4"
 
 var tabNames = []string{"Compose", "Containers", "Images", "Volumes", "Networks", "Settings"}
 
@@ -243,21 +243,21 @@ type logsTickMsg time.Time
 type graphsTickMsg time.Time
 
 type graphsSampleMsg struct {
-	key          string
-	cpu          float64
-	mem          uint64
-	dockerN      int
-	hostCPU      float64
-	hostMem      float64
-	disk         float64
-	hostCPUOK    bool
-	hostMemOK    bool
-	diskOK       bool
-	hostSrc      string
-	targetErr    error
-	hostErr      error
-	err          error
-	at           time.Time
+	key       string
+	cpu       float64
+	mem       uint64
+	dockerN   int
+	hostCPU   float64
+	hostMem   float64
+	disk      float64
+	hostCPUOK bool
+	hostMemOK bool
+	diskOK    bool
+	hostSrc   string
+	targetErr error
+	hostErr   error
+	err       error
+	at        time.Time
 }
 
 type dataMsg struct {
