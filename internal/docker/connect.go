@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
 )
 
@@ -28,27 +30,55 @@ func New() (*Client, error) {
 
 // NewWithHost connects to a specific Docker host URL.
 // Empty host uses client.FromEnv (DOCKER_HOST / docker context).
+// ssh:// URLs use docker/cli connhelper (same as the Docker CLI).
 func NewWithHost(host string) (*Client, error) {
+	host = strings.TrimSpace(host)
+	fromEnv := host == ""
+	label := "unix:///var/run/docker.sock"
+	if fromEnv {
+		if h := strings.TrimSpace(os.Getenv("DOCKER_HOST")); h != "" {
+			host = h
+			label = h
+		}
+	} else {
+		label = host
+	}
+
 	opts := []client.Opt{client.WithAPIVersionNegotiation()}
-	label := "default"
-	if strings.TrimSpace(host) != "" {
-		opts = append(opts, client.WithHost(strings.TrimSpace(host)))
-		label = strings.TrimSpace(host)
+	if host != "" {
+		helper, err := connhelper.GetConnectionHelper(host)
+		if err != nil {
+			return nil, err
+		}
+		if helper != nil {
+			opts = append(opts,
+				client.WithHTTPClient(&http.Client{
+					Transport: &http.Transport{
+						DialContext: helper.Dialer,
+					},
+				}),
+				client.WithHost(helper.Host),
+				client.WithDialContext(helper.Dialer),
+			)
+		} else if fromEnv {
+			opts = append(opts, client.FromEnv)
+		} else {
+			opts = append(opts, client.WithHost(host))
+		}
 	} else {
 		opts = append(opts, client.FromEnv)
-		if h := strings.TrimSpace(os.Getenv("DOCKER_HOST")); h != "" {
-			label = h
-		} else {
-			label = "unix:///var/run/docker.sock"
-		}
 	}
+
 	cli, err := client.NewClientWithOpts(opts...)
 	if err != nil {
 		return nil, err
 	}
 	c := &Client{cli: cli, hostLabel: label}
-	if dh := cli.DaemonHost(); dh != "" {
-		c.hostLabel = dh
+	// SSH uses a dummy HTTP host for the SDK; keep the real ssh:// label for the UI.
+	if !strings.HasPrefix(strings.ToLower(label), "ssh://") {
+		if dh := cli.DaemonHost(); dh != "" {
+			c.hostLabel = dh
+		}
 	}
 	return c, nil
 }
