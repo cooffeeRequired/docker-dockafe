@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cooffeeRequired/docker-dockafe/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cooffeeRequired/dockafe/ci.yml?branch=master&style=flat-square&label=CI" alt="CI status"></a>
+  <a href="https://github.com/cooffeeRequired/docker-dockafe/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cooffeeRequired/docker-dockafe/ci.yml?branch=master&style=flat-square&label=CI" alt="CI status"></a>
   <img src="https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go 1.22+">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license">
   <img src="https://img.shields.io/badge/tested-Linux-brightgreen?style=flat-square" alt="Tested on Linux">
