@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -167,6 +168,17 @@ host    all       all   0.0.0.0/0     scram-sha-256
 
 func (c *Client) listDemoContainers(_ context.Context, _ bool) ([]ContainerInfo, error) {
 	return demoContainers(), nil
+}
+
+func demoStatsOneShot(id string) (float64, uint64, error) {
+	for _, c := range demoContainers() {
+		if c.ID == id || strings.HasPrefix(c.ID, id) || strings.HasPrefix(id, c.ID) {
+			// Mild jitter so live graphs move in demo mode.
+			jitter := float64(time.Now().UnixNano()%700) / 100.0
+			return c.CPUVal + jitter*0.01, c.MemBytes, nil
+		}
+	}
+	return 0, 0, fmt.Errorf("demo container not found")
 }
 
 func (c *Client) listDemoComposeGroups(ctx context.Context, withStats bool) ([]ComposeGroup, error) {

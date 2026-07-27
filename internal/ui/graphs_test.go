@@ -73,3 +73,82 @@ func TestComposeHistKey(t *testing.T) {
 		t.Fatal(composeHistKey("git"))
 	}
 }
+
+func TestAreaChartHasAxis(t *testing.T) {
+	got := areaChart([]float64{1, 2, 3, 4, 8}, 40, 6, true, formatCPUAxis, chartCPUStyle())
+	if !strings.Contains(got, "│") {
+		t.Fatalf("expected Y-axis, got:\n%s", got)
+	}
+	lines := strings.Split(got, "\n")
+	if len(lines) != 6 {
+		t.Fatalf("height=%d want 6", len(lines))
+	}
+}
+
+func TestScaleRangeFromZero(t *testing.T) {
+	minV, maxV := scaleRange([]float64{2, 4}, true)
+	if minV != 0 || maxV < 4 {
+		t.Fatalf("min=%v max=%v", minV, maxV)
+	}
+}
+
+func TestAvgDelta(t *testing.T) {
+	if avg([]float64{2, 4, 6}) != 4 {
+		t.Fatal(avg([]float64{2, 4, 6}))
+	}
+	if delta([]float64{2, 4, 6}) != 4 {
+		t.Fatal(delta([]float64{2, 4, 6}))
+	}
+}
+
+func TestMetricSeriesPushCap(t *testing.T) {
+	s := newMetricSeries(2)
+	s.push(1)
+	s.push(2)
+	s.push(3)
+	if s.len() != 2 {
+		t.Fatalf("len=%d", s.len())
+	}
+	last, ok := s.last()
+	if !ok || last != 3 {
+		t.Fatalf("last=%v ok=%v", last, ok)
+	}
+}
+
+func TestPanelBarChartGuides(t *testing.T) {
+	got := panelBarChart([]float64{1, 2, 4, 8}, 36, 6, true, formatPctShort, chartCPUStyle())
+	if !strings.Contains(got, "┊") {
+		t.Fatalf("expected axis, got:\n%s", got)
+	}
+	if !strings.Contains(got, "┈") {
+		t.Fatalf("expected dotted guides, got:\n%s", got)
+	}
+}
+
+func TestRenderDashPanelFooter(t *testing.T) {
+	got := renderDashPanel(dashPanel{
+		title:    "HOST CPU",
+		subtitle: "load % · 3 pts",
+		values:   []float64{1, 2, 3},
+		style:    chartCPUStyle(),
+		formatY:  formatPctShort,
+		formatV:  formatPctShort,
+		fromZero: true,
+		width:    40,
+		height:   5,
+	})
+	if !strings.Contains(got, "HOST CPU") {
+		t.Fatal(got)
+	}
+	if !strings.Contains(got, "now") || !strings.Contains(got, "min") || !strings.Contains(got, "max") {
+		t.Fatalf("footer missing:\n%s", got)
+	}
+}
+
+func TestJoinPanelRow(t *testing.T) {
+	got := joinPanelRow("a\nb", "c\nd", 2)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("lines=%d got=%q", len(lines), got)
+	}
+}

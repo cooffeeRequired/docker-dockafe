@@ -156,7 +156,11 @@ func (c *Client) ListComposeGroups(ctx context.Context, withStats bool) ([]Compo
 	if err != nil {
 		return nil, err
 	}
+	return ComposeGroupsFrom(containers), nil
+}
 
+// ComposeGroupsFrom builds compose project rows from a container inventory.
+func ComposeGroupsFrom(containers []ContainerInfo) []ComposeGroup {
 	groups := map[string]*ComposeGroup{}
 	order := []string{}
 
@@ -186,7 +190,17 @@ func (c *Client) ListComposeGroups(ctx context.Context, withStats bool) ([]Compo
 		g.CPUVal, g.MemBytes = aggregateUsageVals(g.Containers)
 		out = append(out, *g)
 	}
-	return out, nil
+	return out
+}
+
+// EnrichContainerStats fills CPU/MEM on a copy of the given containers.
+func (c *Client) EnrichContainerStats(ctx context.Context, containers []ContainerInfo) []ContainerInfo {
+	out := append([]ContainerInfo(nil), containers...)
+	if len(out) == 0 {
+		return out
+	}
+	c.fillStats(ctx, out)
+	return out
 }
 
 func (c *Client) ListImages(ctx context.Context) ([]ImageInfo, error) {
@@ -458,8 +472,14 @@ func (c *Client) projectContainerIDs(ctx context.Context, project string) ([]str
 }
 
 func (c *Client) fillStats(ctx context.Context, containers []ContainerInfo) {
+	perTimeout := 2 * time.Second
+	parallel := 8
+	if c.IsRemoteDaemon() {
+		perTimeout = 6 * time.Second
+		parallel = 4
+	}
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
+	sem := make(chan struct{}, parallel)
 	for i := range containers {
 		if !containers[i].Running {
 			continue
@@ -470,7 +490,7 @@ func (c *Client) fillStats(ctx context.Context, containers []ContainerInfo) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			statsCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			statsCtx, cancel := context.WithTimeout(ctx, perTimeout)
 			defer cancel()
 
 			cpu, mem, cpuVal, memBytes, err := c.oneShotStats(statsCtx, containers[idx].ID)
@@ -484,6 +504,74 @@ func (c *Client) fillStats(ctx context.Context, containers []ContainerInfo) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// StatsOneShot returns CPU % and memory usage for one container.
+func (c *Client) StatsOneShot(ctx context.Context, id string) (float64, uint64, error) {
+	if c.IsDemo() {
+		return demoStatsOneShot(id)
+	}
+	_, _, cpuVal, memBytes, err := c.oneShotStats(ctx, id)
+	return cpuVal, memBytes, err
+}
+
+// StatsAggregate returns summed CPU % and memory for the given container IDs.
+func (c *Client) StatsAggregate(ctx context.Context, ids []string) (float64, uint64, error) {
+	if len(ids) == 0 {
+		return 0, 0, fmt.Errorf("no containers")
+	}
+	if c.IsDemo() {
+		var cpu float64
+		var mem uint64
+		for _, id := range ids {
+			cVal, mVal, err := demoStatsOneShot(id)
+			if err != nil {
+				continue
+			}
+			cpu += cVal
+			mem += mVal
+		}
+		return cpu, mem, nil
+	}
+
+	type result struct {
+		cpu float64
+		mem uint64
+		ok  bool
+	}
+	results := make([]result, len(ids))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, id := range ids {
+		wg.Add(1)
+		go func(idx int, containerID string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			_, _, cpuVal, memBytes, err := c.oneShotStats(ctx, containerID)
+			if err != nil {
+				return
+			}
+			results[idx] = result{cpu: cpuVal, mem: memBytes, ok: true}
+		}(i, id)
+	}
+	wg.Wait()
+
+	var cpu float64
+	var mem uint64
+	var any bool
+	for _, r := range results {
+		if !r.ok {
+			continue
+		}
+		any = true
+		cpu += r.cpu
+		mem += r.mem
+	}
+	if !any {
+		return 0, 0, fmt.Errorf("stats unavailable")
+	}
+	return cpu, mem, nil
 }
 
 func (c *Client) oneShotStats(ctx context.Context, id string) (string, string, float64, uint64, error) {

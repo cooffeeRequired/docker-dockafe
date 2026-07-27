@@ -111,7 +111,7 @@ func (m Model) openTopForTarget() (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		body, err := m.client.ContainerTop(ctx, id)
+		body, err := m.focusedClient().ContainerTop(ctx, id)
 		if err != nil {
 			return contentMsg{err: err, mode: ModeDetail}
 		}
@@ -159,17 +159,17 @@ func (m Model) actionOnTarget(action string) (tea.Model, tea.Cmd) {
 	case "start":
 		m.status = "starting " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.StartContainer(ctx, id)
+			return m.focusedClient().StartContainer(ctx, id)
 		}, "started: "+name)
 	case "stop":
 		m.status = "stopping " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.StopContainer(ctx, id)
+			return m.focusedClient().StopContainer(ctx, id)
 		}, "stopped: "+name)
 	case "restart":
 		m.status = "restarting " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.RestartContainer(ctx, id)
+			return m.focusedClient().RestartContainer(ctx, id)
 		}, "restarted: "+name)
 	}
 	m.busy = false
@@ -181,11 +181,11 @@ func (m Model) fetchTargetInspect() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		inspect, err := m.client.InspectContainer(ctx, id)
+		inspect, err := m.focusedClient().InspectContainer(ctx, id)
 		if err != nil {
 			return contentMsg{err: err, mode: ModeDetail, targetID: id, targetName: name}
 		}
-		top, _ := m.client.ContainerTop(ctx, id)
+		top, _ := m.focusedClient().ContainerTop(ctx, id)
 		body := fmt.Sprintf(
 			"[ l / f = logs ]  [ e = exec ]  [ t = top ]  [ esc = back ]\n\nName: %s\nID: %s\n\n=== PROCESSES ===\n%s\n\n=== INSPECT ===\n%s\n",
 			name, id, emptyDash(top), inspect,

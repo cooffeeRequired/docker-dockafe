@@ -8,53 +8,75 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/cooffeeRequired/dockafe/internal/config"
 	"github.com/cooffeeRequired/dockafe/internal/docker"
 )
 
 func (m Model) refresh(withStats bool) tea.Cmd {
 	// Caller must bump dataGen and pass via refreshGen for stale protection.
-	return m.refreshGen(withStats, m.dataGen)
+	return m.refreshPaneCmd(0, withStats, m.dataGen)
 }
 
 func (m Model) refreshGen(withStats bool, gen uint64) tea.Cmd {
-	client := m.client
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+	return m.refreshPaneCmd(0, withStats, gen)
+}
 
-		sys, _ := client.SystemInfo(ctx)
+func (m Model) enrichStatsCmd(gen uint64, containers []docker.ContainerInfo) tea.Cmd {
+	return m.enrichPaneStatsCmd(0, gen, containers)
+}
 
-		groups, err := client.ListComposeGroups(ctx, withStats)
-		if err != nil {
-			return dataMsg{gen: gen, err: err, at: time.Now(), sysInfo: sys}
-		}
-		containers, err := client.ListContainers(ctx, withStats)
-		if err != nil {
-			return dataMsg{gen: gen, err: err, at: time.Now(), sysInfo: sys}
-		}
-		images, err := client.ListImages(ctx)
-		if err != nil {
-			return dataMsg{gen: gen, err: err, at: time.Now(), sysInfo: sys}
-		}
-		volumes, err := client.ListVolumes(ctx)
-		if err != nil {
-			return dataMsg{gen: gen, err: err, at: time.Now(), sysInfo: sys}
-		}
-		networks, err := client.ListNetworks(ctx)
-		if err != nil {
-			return dataMsg{gen: gen, err: err, at: time.Now(), sysInfo: sys}
-		}
-		return dataMsg{
-			gen:        gen,
-			groups:     groups,
-			containers: containers,
-			images:     images,
-			volumes:    volumes,
-			networks:   networks,
-			sysInfo:    sys,
-			at:         time.Now(),
-		}
+func (m *Model) applyRightDataMsg(msg dataMsg) tea.Cmd {
+	if msg.gen != 0 && msg.gen != m.dataGenRight {
+		return nil
 	}
+	m.loadingRight = false
+	if msg.sysInfo != "" {
+		m.sysInfoRight = msg.sysInfo
+	}
+	if msg.err != nil {
+		m.errRight = msg.err.Error()
+		return nil
+	}
+	m.errRight = ""
+	containers := msg.containers
+	groups := msg.groups
+	if msg.wantStats {
+		containers = mergePreservedStats(m.containersRight, containers)
+		groups = docker.ComposeGroupsFrom(containers)
+	}
+	m.containersRight = containers
+	m.groupsRight = groups
+	m.lastSyncRight = msg.at
+	m.recordStatsFromData(dataMsg{containers: containers, groups: groups})
+	m.clampMultiCursors()
+	if m.mode == ModeMultiHost {
+		m.status = fmt.Sprintf("multi · right sync %s", msg.at.Format("15:04:05"))
+	}
+	if msg.wantStats && !m.statsEnrichBusyRight && hasRunningContainers(containers) {
+		m.statsEnrichBusyRight = true
+		return m.enrichPaneStatsCmd(1, msg.gen, containers)
+	}
+	return nil
+}
+
+func (m *Model) applyRightStatsEnrich(msg statsEnrichMsg) tea.Cmd {
+	m.statsEnrichBusyRight = false
+	if msg.gen != 0 && msg.gen != m.dataGenRight {
+		return nil
+	}
+	if msg.err != nil {
+		m.errRight = msg.err.Error()
+		return nil
+	}
+	m.containersRight = applyStatsByID(m.containersRight, msg.containers)
+	m.groupsRight = docker.ComposeGroupsFrom(m.containersRight)
+	m.lastSyncRight = msg.at
+	m.recordStatsFromData(dataMsg{containers: m.containersRight, groups: m.groupsRight})
+	m.clampMultiCursors()
+	if m.mode == ModeMultiHost {
+		m.status = fmt.Sprintf("multi · live · %s", msg.at.Format("15:04:05"))
+	}
+	return nil
 }
 
 func (m *Model) startRefresh(withStats bool) tea.Cmd {
@@ -62,11 +84,28 @@ func (m *Model) startRefresh(withStats bool) tea.Cmd {
 	return m.refreshGen(withStats, m.dataGen)
 }
 
+func hasRunningContainers(containers []docker.ContainerInfo) bool {
+	for _, c := range containers {
+		if c.Running {
+			return true
+		}
+	}
+	return false
+}
+
 func (m Model) runAction(fn func(context.Context) error, okMsg string) tea.Cmd {
+	if err := m.canMutate(); err != nil {
+		return func() tea.Msg {
+			return actionDoneMsg{err: err, msg: okMsg}
+		}
+	}
+	host := m.auditHost()
+	target := okMsg
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		err := fn(ctx)
+		_ = config.Audit(host, "mutate", target, err == nil, errString(err))
 		return actionDoneMsg{err: err, msg: okMsg}
 	}
 }
@@ -81,7 +120,7 @@ func (m *Model) startFetchLogs() tea.Cmd {
 }
 
 func (m Model) fetchLogsGen(gen uint64, id, name string) tea.Cmd {
-	client := m.client
+	client := m.focusedClient()
 	return func() tea.Msg {
 		if id == "" {
 			return logsMsg{gen: gen, targetID: id, err: fmt.Errorf("empty container id")}
@@ -122,11 +161,11 @@ func (m Model) fetchDetail() tea.Cmd {
 			if id == "" {
 				return contentMsg{err: fmt.Errorf("no container"), mode: ModeDetail}
 			}
-			inspect, err := m.client.InspectContainer(ctx, id)
+			inspect, err := m.focusedClient().InspectContainer(ctx, id)
 			if err != nil {
 				return contentMsg{err: err, mode: ModeDetail, targetID: id, targetName: name}
 			}
-			top, _ := m.client.ContainerTop(ctx, id)
+			top, _ := m.focusedClient().ContainerTop(ctx, id)
 			body := fmt.Sprintf(
 				"[ l / f = logs ]  [ e = exec ]  [ t = top ]  [ esc = back ]\n\nName: %s\nID: %s\n\n=== PROCESSES ===\n%s\n\n=== INSPECT ===\n%s\n",
 				name, id, emptyDash(top), inspect,
@@ -136,7 +175,7 @@ func (m Model) fetchDetail() tea.Cmd {
 			if id == "" {
 				return contentMsg{err: fmt.Errorf("no image"), mode: ModeDetail}
 			}
-			inspect, err := m.client.InspectImage(ctx, id)
+			inspect, err := m.focusedClient().InspectImage(ctx, id)
 			if err != nil {
 				return contentMsg{err: err, mode: ModeDetail}
 			}
@@ -145,7 +184,7 @@ func (m Model) fetchDetail() tea.Cmd {
 			if name == "" {
 				return contentMsg{err: fmt.Errorf("no volume"), mode: ModeDetail}
 			}
-			inspect, err := m.client.InspectVolume(ctx, name)
+			inspect, err := m.focusedClient().InspectVolume(ctx, name)
 			if err != nil {
 				return contentMsg{err: err, mode: ModeDetail}
 			}
@@ -154,7 +193,7 @@ func (m Model) fetchDetail() tea.Cmd {
 			if id == "" {
 				return contentMsg{err: fmt.Errorf("no network"), mode: ModeDetail}
 			}
-			inspect, err := m.client.InspectNetwork(ctx, id)
+			inspect, err := m.focusedClient().InspectNetwork(ctx, id)
 			if err != nil {
 				return contentMsg{err: err, mode: ModeDetail}
 			}
@@ -177,12 +216,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		if (m.mode == ModeList || m.mode == ModeComposeDetail || m.mode == ModeGraphs) && !m.busy && m.confirm == confirmNone {
-			m.dataGen++
-			cmds = append(cmds, m.refreshGen(true, m.dataGen))
+		// Graphs use a dedicated 500ms stats poll — skip the heavy full refresh there.
+		// Never bump dataGen while a refresh is in flight (loading): otherwise SSH
+		// responses arrive stale and the UI stays stuck on "loading…".
+		if m.mode == ModeMultiHost && !m.busy && m.confirm == confirmNone {
+			cmds = append(cmds, m.tickMultiHostCmds()...)
+		} else if (m.mode == ModeList || m.mode == ModeComposeDetail) && !m.busy && !m.loading && m.confirm == confirmNone {
+			cmds = append(cmds, m.tickOnePane(0)...)
 		}
 		cmds = append(cmds, tickCmd())
 		return m, tea.Batch(cmds...)
+
+	case graphsTickMsg:
+		if m.mode != ModeGraphs {
+			return m, nil
+		}
+		cmds := []tea.Cmd{graphsTickCmd()}
+		if !m.graphsSampleBusy {
+			m.graphsSampleBusy = true
+			cmds = append(cmds, m.sampleGraphsCmd())
+		}
+		return m, tea.Batch(cmds...)
+
+	case graphsSampleMsg:
+		m.graphsSampleBusy = false
+		if m.mode != ModeGraphs || msg.key != m.graphsKey {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.errMsg = msg.err.Error()
+			m.status = "graphs sample failed"
+			return m, nil
+		}
+		m.applyGraphsSample(msg)
+		m.errMsg = ""
+		if msg.targetErr != nil {
+			m.errMsg = msg.targetErr.Error()
+		} else if msg.hostErr != nil && !msg.hostCPUOK {
+			m.errMsg = msg.hostErr.Error()
+		}
+		m.status = fmt.Sprintf(
+			"conf: %d upd · poll: %s · sample %s",
+			statsHistCap, graphsSampleInterval, msg.at.Format("15:04:05"),
+		)
+		m.refreshGraphsView()
+		return m, nil
 
 	case splashReadyMsg:
 		m.splashMinDone = true
@@ -252,6 +330,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case hostSwitchMsg:
 		return m, m.applyHostSwitch(msg)
+
+	case hostSavedMsg:
+		return m, m.applyHostSaved(msg)
 
 	case volTransferDoneMsg:
 		m.busy = false
@@ -340,7 +421,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadVolFile(msg.path, true)
 
 	case dataMsg:
+		if msg.pane == 1 {
+			return m, m.applyRightDataMsg(msg)
+		}
 		if msg.gen != 0 && msg.gen != m.dataGen {
+			// Superseded refresh — keep waiting for the current gen.
 			return m, nil
 		}
 		m.loading = false
@@ -359,13 +444,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.errMsg = ""
-		m.groups = msg.groups
-		m.containers = msg.containers
-		m.images = msg.images
-		m.volumes = msg.volumes
-		m.networks = msg.networks
+		containers := msg.containers
+		groups := msg.groups
+		if msg.wantStats {
+			// Keep last known CPU/MEM visible while the next enrich runs.
+			containers = mergePreservedStats(m.containers, containers)
+			groups = docker.ComposeGroupsFrom(containers)
+		}
+		m.groups = groups
+		m.containers = containers
+		if msg.images != nil {
+			m.images = msg.images
+		}
+		if msg.volumes != nil {
+			m.volumes = msg.volumes
+		}
+		if msg.networks != nil {
+			m.networks = msg.networks
+		}
 		m.lastSync = msg.at
-		m.recordStatsFromData(msg)
+		m.recordStatsFromData(dataMsg{containers: containers, groups: groups})
 		m.status = fmt.Sprintf("sync %s · sort %s", msg.at.Format("15:04:05"), m.sortLabel())
 		if m.mode == ModeSplash {
 			m.splashDataReady = true
@@ -388,6 +486,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("graphs · sync %s · esc back", msg.at.Format("15:04:05"))
 			m.refreshGraphsView()
 		}
+		m.clampMultiCursors()
+
+		var cmds []tea.Cmd
+		if msg.wantStats && !m.statsEnrichBusy && hasRunningContainers(containers) {
+			m.statsEnrichBusy = true
+			had := false
+			for _, c := range containers {
+				if containerHasStats(c) {
+					had = true
+					break
+				}
+			}
+			if !had {
+				m.status = fmt.Sprintf("sync %s · loading CPU/MEM…", msg.at.Format("15:04:05"))
+			} else {
+				m.status = fmt.Sprintf("sync %s · live CPU/MEM", msg.at.Format("15:04:05"))
+			}
+			cmds = append(cmds, m.enrichPaneStatsCmd(0, msg.gen, containers))
+		}
+		return m, tea.Batch(cmds...)
+
+	case statsEnrichMsg:
+		if msg.pane == 1 {
+			return m, m.applyRightStatsEnrich(msg)
+		}
+		m.statsEnrichBusy = false
+		if msg.gen != 0 && msg.gen != m.dataGen {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.status = "CPU/MEM enrich failed"
+			return m, nil
+		}
+		m.containers = applyStatsByID(m.containers, msg.containers)
+		m.groups = docker.ComposeGroupsFrom(m.containers)
+		m.lastSync = msg.at
+		m.recordStatsFromData(dataMsg{
+			containers: m.containers,
+			groups:     m.groups,
+		})
+		m.status = fmt.Sprintf("sync %s · live · sort %s", msg.at.Format("15:04:05"), m.sortLabel())
+		if m.mode == ModeList {
+			m.applyRows()
+		}
+		if m.mode == ModeComposeDetail {
+			prefer := ""
+			if svc, ok := m.selectedComposeService(); ok {
+				prefer = svc.ID
+			}
+			m.syncComposeServices(prefer)
+		}
+		if m.mode == ModeGraphs {
+			m.refreshGraphsView()
+		}
+		m.clampMultiCursors()
 		return m, nil
 
 	case actionDoneMsg:
@@ -516,6 +669,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeHosts {
 		return m.handleHostsKey(msg)
+	}
+
+	if m.mode == ModeMultiHost {
+		return m.handleMultiHostKey(msg)
 	}
 
 	if m.mode == ModeVolTransfer {
@@ -681,9 +838,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case "r":
 			if m.mode == ModeGraphs {
-				m.loading = true
-				m.status = "refreshing…"
-				return m, m.refresh(true)
+				if m.graphsSampleBusy {
+					m.status = "sample already in flight…"
+					return m, nil
+				}
+				m.graphsSampleBusy = true
+				m.status = "sampling…"
+				return m, m.sampleGraphsCmd()
 			}
 			if m.mode == ModeEvents {
 				m.refreshEventsView()
@@ -832,7 +993,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "E":
 		return m.openEvents()
 	case "H":
+		m.hostPickTarget = hostPickLeft
+		m.returnToMulti = false
 		return m.openHosts()
+	case "M":
+		return m.openMultiHost()
 	case "t":
 		return m.openTopForTarget()
 	case "e":
@@ -919,6 +1084,11 @@ func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirm = confirmNone
 		m.confirmTarget = ""
 		if action == confirmVolWrite {
+			if m2, ok := m.guardMutate(); !ok {
+				m.volPendingPath = ""
+				m.volPendingData = nil
+				return m2, nil
+			}
 			path := m.volPendingPath
 			data := m.volPendingData
 			m.volPendingPath = ""
@@ -928,11 +1098,17 @@ func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.busy = true
 			m.status = "saving " + path + "…"
 			vol := m.volName
-			client := m.client
+			client := m.focusedClient()
+			host := m.auditHost()
 			return m, func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 				defer cancel()
 				err := client.WriteVolumeFile(ctx, vol, path, data)
+				errMsg := ""
+				if err != nil {
+					errMsg = err.Error()
+				}
+				_ = config.Audit(host, "volume_write", vol+"/"+path, err == nil, errMsg)
 				if err != nil {
 					return volEditorDoneMsg{path: path, err: err}
 				}
@@ -1045,7 +1221,7 @@ func (m Model) fetchComposeLogs(ids, names []string) tea.Cmd {
 }
 
 func (m Model) fetchComposeLogsGen(gen uint64, ids, names []string) tea.Cmd {
-	client := m.client
+	client := m.focusedClient()
 	targetKey := strings.Join(ids, ",")
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
@@ -1081,7 +1257,7 @@ func (m Model) openTop() (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		body, err := m.client.ContainerTop(ctx, id)
+		body, err := m.focusedClient().ContainerTop(ctx, id)
 		if err != nil {
 			return contentMsg{err: err, mode: ModeDetail}
 		}

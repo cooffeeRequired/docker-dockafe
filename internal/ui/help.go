@@ -8,20 +8,20 @@ import (
 
 var (
 	helpKeyStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
+			Foreground(cHelpKey).
 			Bold(true)
 	helpDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
+			Foreground(cMuted)
 	helpTagStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
+			Foreground(cFaint).
 			Bold(true)
 	helpSepStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238"))
+			Foreground(cBorderDim)
 	helpTitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
+			Foreground(cHelpKey).
 			Bold(true)
 	helpSectionStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("117")).
+				Foreground(cHelpSec).
 				Bold(true)
 )
 
@@ -62,6 +62,7 @@ func helpFooterList(tab Tab) string {
 		{"U", "update"},
 		{"E", "events"},
 		{"H", "hosts"},
+		{"M", "multi"},
 		{"q", "quit"},
 	})
 
@@ -70,6 +71,7 @@ func helpFooterList(tab Tab) string {
 			{"↑↓", "move"},
 			{"Enter", "open"},
 			{"H", "hosts"},
+			{"M", "multi"},
 			{"U", "update"},
 		})
 	}
@@ -248,11 +250,19 @@ func helpTextFull() string {
 
 	b.WriteString(sec("Settings (tab 6)"))
 	b.WriteByte('\n')
-	b.WriteString(row("Enter", "open selected setting"))
+	b.WriteString(row("Enter", "open / toggle selected setting"))
 	b.WriteByte('\n')
-	b.WriteString(row("H", "Docker hosts / contexts"))
+	b.WriteString(row("H", "Docker hosts / favorites"))
 	b.WriteByte('\n')
-	b.WriteString(row("U", "check / install update"))
+	b.WriteString(row("a / s / d", "add · save current · delete saved"))
+	b.WriteByte('\n')
+	b.WriteString(row("c", "one-shot custom URL (not saved)"))
+	b.WriteByte('\n')
+	b.WriteString(row("Remote write", "lock mutations on ssh/tcp hosts (default on)"))
+	b.WriteByte('\n')
+	b.WriteString(row("Audit log", "view recent mutating actions"))
+	b.WriteByte('\n')
+	b.WriteString(row("U", "check / install update (SHA256 verified)"))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 
@@ -292,7 +302,13 @@ func helpTextFull() string {
 	b.WriteByte('\n')
 	b.WriteString(row("E", "docker events (die/oom/health)"))
 	b.WriteByte('\n')
-	b.WriteString(row("H", "switch Docker host / context"))
+	b.WriteString(row("H", "switch Docker host / favorites"))
+	b.WriteByte('\n')
+	b.WriteString(row("M", "multi-host side-by-side (Compose/Containers)"))
+	b.WriteByte('\n')
+	b.WriteString(row("a/s/d (in Hosts)", "add · save current · delete saved"))
+	b.WriteByte('\n')
+	b.WriteString(row("Tab (in Multi)", "focus left / right pane"))
 	b.WriteByte('\n')
 	b.WriteString(row("t", "docker top"))
 	b.WriteByte('\n')

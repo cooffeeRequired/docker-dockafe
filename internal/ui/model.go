@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/cooffeeRequired/dockafe/internal/config"
 	"github.com/cooffeeRequired/dockafe/internal/docker"
 )
 
@@ -51,6 +52,7 @@ const (
 	ModeEvents
 	ModeHosts
 	ModeVolTransfer
+	ModeMultiHost
 )
 
 type confirmKind int
@@ -175,11 +177,18 @@ type Model struct {
 	updateLatest    string
 	updateURL       string
 	updateAssetURL  string
+	updateSHA256    string
 	updateErr       string
 
-	statsHist   map[string]*statsSeries
-	graphsKey   string
-	graphsTitle string
+	statsHist        map[string]*statsSeries
+	graphsKey        string
+	graphsTitle      string
+	graphsSampleBusy bool
+	graphsHostCPU    *metricSeries
+	graphsHostMem    *metricSeries
+	graphsDisk       *metricSeries
+	graphsDockerN    int
+	graphsHostSrc    string
 
 	eventLog      []docker.EventInfo
 	eventAlert    string
@@ -188,11 +197,30 @@ type Model struct {
 	eventCh       <-chan docker.EventInfo
 	eventErrCh    <-chan error
 
-	hostEndpoints []docker.Endpoint
-	hostCursor    int
-	hostCustom    bool
-	hostInput     textinput.Model
-	hostErr       string
+	hostEndpoints  []docker.Endpoint
+	hostCursor     int
+	hostForm       hostFormKind
+	hostDraftName  string
+	hostInput      textinput.Model
+	hostErr        string
+	hostPickTarget hostPickTarget
+
+	// Right pane for ModeMultiHost (left = existing client/groups/containers).
+	clientRight          *docker.Client
+	groupsRight          []docker.ComposeGroup
+	containersRight      []docker.ContainerInfo
+	sysInfoRight         string
+	dataGenRight         uint64
+	loadingRight         bool
+	statsEnrichBusyRight bool
+	remoteTickCountRight uint64
+	lastSyncRight        time.Time
+	errRight             string
+	multiFocus           int // 0=left, 1=right
+	multiCursorL         int
+	multiCursorR         int
+	actionPane           int // pane for nested modes opened from multi-host
+	returnToMulti        bool
 
 	volTransferKind  volTransferKind
 	volTransferPath  string
@@ -200,24 +228,57 @@ type Model struct {
 	volTransferInput textinput.Model
 
 	settingsCursor settingsItem
+	settings       config.Settings
 
 	// Async generation tokens (ignore stale responses)
-	dataGen uint64
-	logsGen uint64
-	volGen  uint64
+	dataGen         uint64
+	logsGen         uint64
+	volGen          uint64
+	statsEnrichBusy bool
+	remoteTickCount uint64
 }
 
 type tickMsg time.Time
 type logsTickMsg time.Time
+type graphsTickMsg time.Time
+
+type graphsSampleMsg struct {
+	key          string
+	cpu          float64
+	mem          uint64
+	dockerN      int
+	hostCPU      float64
+	hostMem      float64
+	disk         float64
+	hostCPUOK    bool
+	hostMemOK    bool
+	diskOK       bool
+	hostSrc      string
+	targetErr    error
+	hostErr      error
+	err          error
+	at           time.Time
+}
 
 type dataMsg struct {
 	gen        uint64
+	pane       int // 0=left/primary, 1=right
 	groups     []docker.ComposeGroup
 	containers []docker.ContainerInfo
 	images     []docker.ImageInfo
 	volumes    []docker.VolumeInfo
 	networks   []docker.NetworkInfo
 	sysInfo    string
+	err        error
+	at         time.Time
+	wantStats  bool // remote inventory landed without CPU/MEM — enrich next
+}
+
+type statsEnrichMsg struct {
+	gen        uint64
+	pane       int
+	groups     []docker.ComposeGroup
+	containers []docker.ContainerInfo
 	err        error
 	at         time.Time
 }
@@ -265,7 +326,7 @@ func New(client *docker.Client) Model {
 	search.CharLimit = 200
 	search.Width = 40
 
-	return Model{
+	m := Model{
 		client:          client,
 		tab:             TabCompose,
 		mode:            ModeSplash,
@@ -281,6 +342,8 @@ func New(client *docker.Client) Model {
 		statsHist:       map[string]*statsSeries{},
 		dataGen:         1,
 	}
+	m.loadSettings()
+	return m
 }
 
 func logsKeyMap() viewport.KeyMap {
@@ -332,46 +395,54 @@ func logsTickCmd() tea.Cmd {
 	})
 }
 
+const graphsSampleInterval = time.Second
+
+func graphsTickCmd() tea.Cmd {
+	return tea.Tick(graphsSampleInterval, func(t time.Time) tea.Msg {
+		return graphsTickMsg(t)
+	})
+}
+
 var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("63")).
+			Foreground(cTitleFg).
+			Background(cTitleBg).
 			Padding(0, 1)
 	tabStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")).
+			Foreground(cTabFg).
 			Padding(0, 1)
 	activeTabStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("33")).
+			Foreground(cActiveFg).
+			Background(cActiveBg).
 			Padding(0, 1)
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
+			BorderForeground(cBorder).
 			Padding(0, 1)
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243"))
+			Foreground(cMuted)
 	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("110"))
+			Foreground(cAccent)
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
+			Foreground(cError).
 			Bold(true)
 	confirmStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("166")).
+			Foreground(cConfirmFg).
+			Background(cConfirmBg).
 			Bold(true).
 			Padding(0, 1)
 	filterStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
-			Background(lipgloss.Color("236")).
+			Foreground(cFilterFg).
+			Background(cFilterBg).
 			Padding(0, 1)
 	metaStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
+			Foreground(cMuted)
 	updateBadgeStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("232")).
-				Background(lipgloss.Color("214")).
+				Foreground(cBadgeFg).
+				Background(cBadgeBg).
 				Padding(0, 1)
 )
 
@@ -379,13 +450,14 @@ func tableStyles() table.Styles {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(cBorder).
 		BorderBottom(true).
 		Bold(true).
-		Foreground(lipgloss.Color("229"))
+		Foreground(cHeader)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("63")).
+		Foreground(cSelFg).
+		Background(cSelBg).
 		Bold(false)
+	s.Cell = s.Cell.Foreground(cText)
 	return s
 }

@@ -14,12 +14,12 @@ import (
 )
 
 var (
-	composeRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	composeRowStyle = lipgloss.NewStyle().Foreground(cText)
 	composeSelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("63")).
+			Foreground(cSelFg).
+			Background(cSelBg).
 			Bold(true)
-	composeMutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	composeMutedStyle = lipgloss.NewStyle().Foreground(cMuted)
 )
 
 func (m *Model) openComposeDetailLocal() {
@@ -41,7 +41,7 @@ func (m *Model) openComposeDetailLocal() {
 
 func (m *Model) syncComposeServices(preferID string) {
 	m.composeServices = nil
-	for _, g := range m.groups {
+	for _, g := range m.actionGroups() {
 		if g.Name != m.composeProject {
 			continue
 		}
@@ -69,7 +69,7 @@ func (m *Model) syncComposeServices(preferID string) {
 }
 
 func (m Model) composeGroup() (docker.ComposeGroup, bool) {
-	for _, g := range m.groups {
+	for _, g := range m.actionGroups() {
 		if g.Name == m.composeProject {
 			return g, true
 		}
@@ -161,9 +161,19 @@ func (m Model) handleComposeDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "esc", "q", "backspace":
+		if m.returnToMulti && m.clientRight != nil {
+			m.mode = ModeMultiHost
+			m.composeProject = ""
+			m.returnToCompose = false
+			m.relayout()
+			m.status = "multi-host"
+			return m, nil
+		}
 		m.mode = ModeList
 		m.composeProject = ""
 		m.returnToCompose = false
+		m.returnToMulti = false
+		m.actionPane = 0
 		m.relayout()
 		return m, nil
 	case "ctrl+c":
@@ -215,12 +225,18 @@ func (m Model) handleComposeDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		return m.composeAskRemoveService()
 	case "b":
+		if m2, ok := m.guardMutate(); !ok {
+			return m2, nil
+		}
 		m.confirm = confirmRebuild
 		m.confirmTarget = m.composeProject
 		m.confirmLabel = fmt.Sprintf("Rebuild compose „%s“?", m.composeProject)
 		m.mode = ModeConfirm
 		return m, nil
 	case "D":
+		if m2, ok := m.guardMutate(); !ok {
+			return m2, nil
+		}
 		m.confirm = confirmRemoveAll
 		m.confirmTarget = m.composeProject
 		m.confirmLabel = fmt.Sprintf("Remove ALL compose containers “%s”?", m.composeProject)
@@ -288,7 +304,7 @@ func (m Model) composeOpenTop() (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		body, err := m.client.ContainerTop(ctx, id)
+		body, err := m.focusedClient().ContainerTop(ctx, id)
 		if err != nil {
 			return contentMsg{err: err, mode: ModeDetail}
 		}
@@ -321,7 +337,7 @@ func (m Model) composeStartService() (tea.Model, tea.Cmd) {
 	m.status = "starting " + svc.Name
 	id, name := svc.ID, svc.Name
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.StartContainer(ctx, id)
+		return m.focusedClient().StartContainer(ctx, id)
 	}, "started: "+name)
 }
 
@@ -334,7 +350,7 @@ func (m Model) composeStopService() (tea.Model, tea.Cmd) {
 	m.status = "stopping " + svc.Name
 	id, name := svc.ID, svc.Name
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.StopContainer(ctx, id)
+		return m.focusedClient().StopContainer(ctx, id)
 	}, "stopped: "+name)
 }
 
@@ -347,7 +363,7 @@ func (m Model) composeRestartService() (tea.Model, tea.Cmd) {
 	m.status = "restarting " + svc.Name
 	id, name := svc.ID, svc.Name
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.RestartContainer(ctx, id)
+		return m.focusedClient().RestartContainer(ctx, id)
 	}, "restarted: "+name)
 }
 
@@ -361,16 +377,19 @@ func (m Model) composePauseService() (tea.Model, tea.Cmd) {
 	if svc.State == "paused" {
 		m.status = "unpause " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.UnpauseContainer(ctx, id)
+			return m.focusedClient().UnpauseContainer(ctx, id)
 		}, "unpaused: "+name)
 	}
 	m.status = "pause " + name
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.PauseContainer(ctx, id)
+		return m.focusedClient().PauseContainer(ctx, id)
 	}, "paused: "+name)
 }
 
 func (m Model) composeAskKill() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	svc, ok := m.selectedComposeService()
 	if !ok {
 		return m, nil
@@ -383,6 +402,9 @@ func (m Model) composeAskKill() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) composeAskRemoveService() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	svc, ok := m.selectedComposeService()
 	if !ok {
 		return m, nil
@@ -403,5 +425,12 @@ func (m *Model) backFromPanel() {
 		m.syncComposeServices("")
 		return
 	}
+	if m.returnToMulti && m.clientRight != nil {
+		m.mode = ModeMultiHost
+		m.status = "multi-host"
+		return
+	}
+	m.returnToMulti = false
+	m.actionPane = 0
 	m.mode = ModeList
 }

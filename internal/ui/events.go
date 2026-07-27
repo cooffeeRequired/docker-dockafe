@@ -131,7 +131,7 @@ func (m Model) renderEventsBody() string {
 	b.WriteString("\n")
 	b.WriteString(chartLabelStyle().Render("* critical · ! warn · last " + strconv.Itoa(len(m.eventLog)) + " / " + strconv.Itoa(eventsHistCap)))
 	b.WriteString("\n\n")
-	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	warnStyle := lipgloss.NewStyle().Foreground(cWarn)
 	for _, ev := range m.eventLog {
 		line := docker.FormatEventLine(ev)
 		switch ev.Level {
@@ -160,7 +160,7 @@ func (m Model) viewEvents() string {
 	}
 	frame := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(cBorder).
 		Width(max(20, m.width-2))
 	body := frame.Render(m.vp.View())
 	help := renderHelpRow("events", []helpBinding{

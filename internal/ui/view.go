@@ -61,6 +61,8 @@ func (m Model) View() string {
 		return m.viewEvents()
 	case ModeHosts:
 		return m.viewHosts()
+	case ModeMultiHost:
+		return m.viewMultiHost()
 	case ModeVolTransfer:
 		return m.viewVolTransfer()
 	default:
@@ -112,6 +114,9 @@ func (m Model) viewList() string {
 	}
 	if m.updateAvailable {
 		metaBits = append(metaBits, "update:"+m.updateLatest+" (U)")
+	}
+	if m.remoteReadOnlyActive() {
+		metaBits = append(metaBits, "read-only")
 	}
 	meta := metaStyle.Render(strings.Join(metaBits, " · "))
 
@@ -186,7 +191,7 @@ func (m Model) viewPanel() string {
 	// that can strip / break ANSI colors from logs.
 	frame := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(cBorder).
 		Width(max(20, m.width-2))
 
 	body := frame.Render(m.vp.View())

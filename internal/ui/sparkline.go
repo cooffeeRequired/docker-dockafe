@@ -10,6 +10,9 @@ import (
 
 var sparkBlocks = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 
+// eighthBlocks maps 0..8 fill levels inside one terminal cell.
+var eighthBlocks = []rune{' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
+
 func sparkline(values []float64, width int) string {
 	if width < 1 {
 		return ""
@@ -18,7 +21,7 @@ func sparkline(values []float64, width int) string {
 		return strings.Repeat("·", width)
 	}
 	vals := resample(values, width)
-	minV, maxV := minMax(vals)
+	minV, maxV := scaleRange(vals, false)
 	span := maxV - minV
 	if span <= 0 {
 		span = 1
@@ -38,49 +41,156 @@ func sparkline(values []float64, width int) string {
 	return b.String()
 }
 
-func blockChart(values []float64, width, height int) string {
-	if width < 1 || height < 1 {
+// areaChart draws a filled area plot with Y-axis labels and sub-cell vertical resolution.
+func areaChart(values []float64, width, height int, fromZero bool, formatY func(float64) string, barStyle lipgloss.Style) string {
+	if width < 8 || height < 2 {
 		return ""
 	}
+	labelW := 8
+	plotW := width - labelW - 1
+	if plotW < 4 {
+		plotW = width
+		labelW = 0
+	}
+
 	if len(values) == 0 {
 		lines := make([]string, height)
+		empty := chartMutedStyle().Render(strings.Repeat("·", max(4, plotW)))
 		for i := range lines {
-			lines[i] = strings.Repeat("·", width)
+			if labelW > 0 {
+				lines[i] = strings.Repeat(" ", labelW) + chartMutedStyle().Render("│") + empty
+			} else {
+				lines[i] = empty
+			}
 		}
 		return strings.Join(lines, "\n")
 	}
-	vals := resample(values, width)
-	_, maxV := minMax(vals)
-	if maxV <= 0 {
-		maxV = 1
+
+	vals := resample(values, plotW)
+	minV, maxV := scaleRange(vals, fromZero)
+	span := maxV - minV
+	if span <= 0 {
+		span = 1
+	}
+
+	levels := make([]int, plotW)
+	for i, v := range vals {
+		frac := (v - minV) / span
+		if frac < 0 {
+			frac = 0
+		}
+		if frac > 1 {
+			frac = 1
+		}
+		levels[i] = int(math.Round(frac * float64(height*8)))
 	}
 
 	grid := make([][]rune, height)
 	for y := 0; y < height; y++ {
-		grid[y] = make([]rune, width)
-		for x := 0; x < width; x++ {
-			grid[y][x] = ' '
-		}
-	}
-
-	for x, v := range vals {
-		level := int(math.Round(v / maxV * float64(height)))
-		if level < 0 {
-			level = 0
-		}
-		if level > height {
-			level = height
-		}
-		for y := 0; y < level; y++ {
-			grid[height-1-y][x] = '█'
+		grid[y] = make([]rune, plotW)
+		guide := y == height/2
+		for x := 0; x < plotW; x++ {
+			topEighth := (height - y) * 8
+			bottomEighth := (height - 1 - y) * 8
+			lv := levels[x]
+			switch {
+			case lv <= bottomEighth:
+				if guide {
+					grid[y][x] = '─'
+				} else {
+					grid[y][x] = ' '
+				}
+			case lv >= topEighth:
+				grid[y][x] = '█'
+			default:
+				grid[y][x] = eighthBlocks[lv-bottomEighth]
+			}
 		}
 	}
 
 	lines := make([]string, height)
 	for y := 0; y < height; y++ {
-		lines[y] = string(grid[y])
+		plot := barStyle.Render(string(grid[y]))
+		if labelW <= 0 {
+			lines[y] = plot
+			continue
+		}
+		var label string
+		switch y {
+		case 0:
+			label = formatY(maxV)
+		case height - 1:
+			label = formatY(minV)
+		case height / 2:
+			label = formatY(minV + span/2)
+		default:
+			label = ""
+		}
+		if len([]rune(label)) > labelW {
+			label = truncateRunes(label, labelW)
+		}
+		pad := labelW - len([]rune(label))
+		lines[y] = chartMutedStyle().Render(strings.Repeat(" ", pad)+label) +
+			chartMutedStyle().Render("│") + plot
 	}
 	return strings.Join(lines, "\n")
+}
+
+func scaleRange(values []float64, fromZero bool) (float64, float64) {
+	minV, maxV := minMax(values)
+	if fromZero {
+		minV = 0
+	}
+	if maxV <= minV {
+		if fromZero {
+			return 0, 1
+		}
+		pad := math.Abs(maxV) * 0.1
+		if pad < 0.01 {
+			pad = 0.01
+		}
+		return minV - pad, maxV + pad
+	}
+	pad := (maxV - minV) * 0.12
+	if fromZero {
+		maxV = maxV + pad
+		if maxV < 1 {
+			maxV = math.Max(maxV, 1)
+		}
+		return 0, maxV
+	}
+	minV = minV - pad
+	if minV < 0 && valuesLookNonNegative(values) {
+		minV = 0
+	}
+	return minV, maxV + pad
+}
+
+func valuesLookNonNegative(values []float64) bool {
+	for _, v := range values {
+		if v < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func avg(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, v := range values {
+		sum += v
+	}
+	return sum / float64(len(values))
+}
+
+func delta(values []float64) float64 {
+	if len(values) < 2 {
+		return 0
+	}
+	return values[len(values)-1] - values[0]
 }
 
 func resample(values []float64, width int) []float64 {
@@ -149,14 +259,100 @@ func formatMemBytes(n uint64) string {
 	return fmt.Sprintf("%.1f%ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
+func formatCPUAxis(v float64) string {
+	if v >= 100 {
+		return fmt.Sprintf("%.0f%%", v)
+	}
+	if v >= 10 {
+		return fmt.Sprintf("%.1f%%", v)
+	}
+	return fmt.Sprintf("%.2f%%", v)
+}
+
+func formatMemAxis(v float64) string {
+	if v < 0 {
+		v = 0
+	}
+	return formatMemBytes(uint64(v))
+}
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n <= 1 {
+		return string(r[:n])
+	}
+	return string(r[:n-1]) + "…"
+}
+
 func chartLabelStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	return lipgloss.NewStyle().Foreground(cMuted)
+}
+
+func chartMutedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(cFaint)
 }
 
 func chartValueStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	return lipgloss.NewStyle().Foreground(cBright).Bold(true)
 }
 
-func chartBlockStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+func chartCPUStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(cCPU)
+}
+
+func chartMemStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(cMem)
+}
+
+func chartSectionStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(cBright).Bold(true)
+}
+
+func blockChart(values []float64, width, height int) string {
+	if width < 1 || height < 1 {
+		return ""
+	}
+	if len(values) == 0 {
+		lines := make([]string, height)
+		for i := range lines {
+			lines[i] = strings.Repeat("·", width)
+		}
+		return strings.Join(lines, "\n")
+	}
+	vals := resample(values, width)
+	_, maxV := scaleRange(vals, true)
+	span := maxV
+	if span <= 0 {
+		span = 1
+	}
+	grid := make([][]rune, height)
+	for y := 0; y < height; y++ {
+		grid[y] = make([]rune, width)
+		for x := 0; x < width; x++ {
+			grid[y][x] = ' '
+		}
+	}
+	for x, v := range vals {
+		level := int(math.Round(v / span * float64(height*8)))
+		for y := 0; y < height; y++ {
+			bottom := (height - 1 - y) * 8
+			top := (height - y) * 8
+			switch {
+			case level <= bottom:
+				grid[y][x] = ' '
+			case level >= top:
+				grid[y][x] = '█'
+			default:
+				grid[y][x] = eighthBlocks[level-bottom]
+			}
+		}
+	}
+	lines := make([]string, height)
+	for y := 0; y < height; y++ {
+		lines[y] = string(grid[y])
+	}
+	return strings.Join(lines, "\n")
 }

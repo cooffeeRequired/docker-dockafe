@@ -11,6 +11,9 @@ import (
 )
 
 func (m Model) currentComposeName() string {
+	if m.mode == ModeMultiHost {
+		return m.multiSelectedCompose()
+	}
 	rows := m.table.Rows()
 	idx := m.table.Cursor()
 	if idx < 0 || idx >= len(rows) {
@@ -20,6 +23,9 @@ func (m Model) currentComposeName() string {
 }
 
 func (m Model) currentContainer() (id, name string) {
+	if m.mode == ModeMultiHost {
+		return m.multiSelectedContainer()
+	}
 	idx := m.table.Cursor()
 	list := m.filteredContainers()
 	if idx < 0 || idx >= len(list) {
@@ -59,6 +65,9 @@ func (m Model) currentNetwork() (id, name string) {
 }
 
 func (m Model) startSelected() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	switch m.tab {
 	case TabCompose:
 		name := m.currentComposeName()
@@ -68,7 +77,7 @@ func (m Model) startSelected() (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.status = "starting compose " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.StartCompose(ctx, name)
+			return m.focusedClient().StartCompose(ctx, name)
 		}, "compose started: "+name)
 	case TabContainers:
 		id, name := m.currentContainer()
@@ -78,13 +87,16 @@ func (m Model) startSelected() (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.status = "starting " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.StartContainer(ctx, id)
+			return m.focusedClient().StartContainer(ctx, id)
 		}, "started: "+name)
 	}
 	return m, nil
 }
 
 func (m Model) stopSelected() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	switch m.tab {
 	case TabCompose:
 		name := m.currentComposeName()
@@ -94,7 +106,7 @@ func (m Model) stopSelected() (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.status = "stopping compose " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.StopCompose(ctx, name)
+			return m.focusedClient().StopCompose(ctx, name)
 		}, "compose stopped: "+name)
 	case TabContainers:
 		id, name := m.currentContainer()
@@ -104,13 +116,16 @@ func (m Model) stopSelected() (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.status = "stopping " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.StopContainer(ctx, id)
+			return m.focusedClient().StopContainer(ctx, id)
 		}, "stopped: "+name)
 	}
 	return m, nil
 }
 
 func (m Model) restartSelected() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	switch m.tab {
 	case TabCompose:
 		name := m.currentComposeName()
@@ -120,7 +135,7 @@ func (m Model) restartSelected() (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.status = "restarting compose " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.RestartCompose(ctx, name)
+			return m.focusedClient().RestartCompose(ctx, name)
 		}, "compose restarted: "+name)
 	case TabContainers:
 		id, name := m.currentContainer()
@@ -130,13 +145,16 @@ func (m Model) restartSelected() (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.status = "restarting " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.RestartContainer(ctx, id)
+			return m.focusedClient().RestartContainer(ctx, id)
 		}, "restarted: "+name)
 	}
 	return m, nil
 }
 
 func (m Model) pauseSelected() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	if m.tab != TabContainers {
 		m.status = "pause only on Containers"
 		return m, nil
@@ -152,16 +170,19 @@ func (m Model) pauseSelected() (tea.Model, tea.Cmd) {
 	if paused {
 		m.status = "unpause " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.UnpauseContainer(ctx, id)
+			return m.focusedClient().UnpauseContainer(ctx, id)
 		}, "unpaused: "+name)
 	}
 	m.status = "pause " + name
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.PauseContainer(ctx, id)
+		return m.focusedClient().PauseContainer(ctx, id)
 	}, "paused: "+name)
 }
 
 func (m Model) askRebuild() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	if m.tab != TabCompose {
 		m.status = "rebuild only on Compose"
 		return m, nil
@@ -179,6 +200,9 @@ func (m Model) askRebuild() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) askRemove() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	switch m.tab {
 	case TabCompose:
 		name := m.currentComposeName()
@@ -226,6 +250,9 @@ func (m Model) askRemove() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) askRemoveAll() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	if m.tab != TabCompose {
 		m.status = "Remove All (D) only on Compose"
 		return m, nil
@@ -242,6 +269,9 @@ func (m Model) askRemoveAll() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) askKill() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	if m.tab != TabContainers {
 		m.status = "kill only on Containers"
 		return m, nil
@@ -258,6 +288,9 @@ func (m Model) askKill() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) askPrune() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	var target string
 	switch m.tab {
 	case TabContainers:
@@ -286,7 +319,7 @@ func (m Model) doRebuild(project string) (tea.Model, tea.Cmd) {
 	m.busy = true
 	m.status = "rebuild " + project
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.RebuildCompose(ctx, project)
+		return m.focusedClient().RebuildCompose(ctx, project)
 	}, "rebuild done: "+project)
 }
 
@@ -298,19 +331,19 @@ func (m Model) doRemove(target string) (tea.Model, tea.Cmd) {
 		id := parts[1]
 		m.status = "removing image " + short(id)
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.RemoveImage(ctx, id, true)
+			return m.focusedClient().RemoveImage(ctx, id, true)
 		}, "image removed: "+short(id))
 	case len(parts) == 2 && parts[0] == "volume":
 		name := parts[1]
 		m.status = "removing volume " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.RemoveVolume(ctx, name, true)
+			return m.focusedClient().RemoveVolume(ctx, name, true)
 		}, "volume removed: "+name)
 	case len(parts) == 3 && parts[0] == "network":
 		id, name := parts[1], parts[2]
 		m.status = "removing network " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			return m.client.RemoveNetwork(ctx, id)
+			return m.focusedClient().RemoveNetwork(ctx, id)
 		}, "network removed: "+name)
 	default:
 		id, name := parts[0], parts[0]
@@ -319,8 +352,8 @@ func (m Model) doRemove(target string) (tea.Model, tea.Cmd) {
 		}
 		m.status = "removing " + name
 		return m, m.runAction(func(ctx context.Context) error {
-			_ = m.client.StopContainer(ctx, id)
-			return m.client.RemoveContainer(ctx, id, true)
+			_ = m.focusedClient().StopContainer(ctx, id)
+			return m.focusedClient().RemoveContainer(ctx, id, true)
 		}, "removed: "+name)
 	}
 }
@@ -329,7 +362,7 @@ func (m Model) doRemoveAll(project string) (tea.Model, tea.Cmd) {
 	m.busy = true
 	m.status = "removing compose " + project
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.RemoveCompose(ctx, project, true)
+		return m.focusedClient().RemoveCompose(ctx, project, true)
 	}, "compose removed: "+project)
 }
 
@@ -342,7 +375,7 @@ func (m Model) doKill(target string) (tea.Model, tea.Cmd) {
 	m.busy = true
 	m.status = "kill " + name
 	return m, m.runAction(func(ctx context.Context) error {
-		return m.client.KillContainer(ctx, id)
+		return m.focusedClient().KillContainer(ctx, id)
 	}, "killed: "+name)
 }
 
@@ -356,13 +389,13 @@ func (m Model) doPrune(kind string) (tea.Model, tea.Cmd) {
 		var err error
 		switch kind {
 		case "images":
-			msg, err = m.client.PruneImages(ctx)
+			msg, err = m.focusedClient().PruneImages(ctx)
 		case "volumes":
-			msg, err = m.client.PruneVolumes(ctx)
+			msg, err = m.focusedClient().PruneVolumes(ctx)
 		case "networks":
-			msg, err = m.client.PruneNetworks(ctx)
+			msg, err = m.focusedClient().PruneNetworks(ctx)
 		default:
-			msg, err = m.client.PruneContainers(ctx)
+			msg, err = m.focusedClient().PruneContainers(ctx)
 		}
 		return actionDoneMsg{err: err, msg: msg}
 	}

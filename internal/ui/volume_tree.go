@@ -299,9 +299,9 @@ func (m Model) viewVolumeTree() string {
 		if m.volFileFocus {
 			// Compact tree: hide icons / sizes
 			label := fmt.Sprintf("%s%s %s", pad, branch, name)
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+			style := lipgloss.NewStyle().Foreground(cFaint)
 			if i == m.volCursor {
-				style = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+				style = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
 			}
 			lines = append(lines, style.Render(ansi.Truncate(label, max(12, m.width*18/100-4), "…")))
 			continue
@@ -312,11 +312,11 @@ func (m Model) viewVolumeTree() string {
 		} else if !n.entry.IsDir && n.entry.Size > 0 {
 			label += "  " + helpDescStyle.Render(humanSize(n.entry.Size))
 		}
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		style := lipgloss.NewStyle().Foreground(cText)
 		if i == m.volCursor {
 			style = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("33")).
+				Foreground(cSelFg).
+				Background(cActiveBg).
 				Bold(true)
 			label = style.Render(" " + label + " ")
 		} else {
@@ -350,13 +350,13 @@ func (m Model) viewVolumeTree() string {
 		rightW = max(20, m.width-leftW-6)
 	}
 
-	treeBorder := lipgloss.Color("240")
-	fileBorder := lipgloss.Color("240")
+	treeBorder := cBorder
+	fileBorder := cBorder
 	if m.volFileFocus {
-		fileBorder = lipgloss.Color("33")
-		treeBorder = lipgloss.Color("236")
+		fileBorder = cActiveBg
+		treeBorder = cBorderDim
 	} else {
-		treeBorder = lipgloss.Color("33")
+		treeBorder = cActiveBg
 	}
 
 	left := lipgloss.NewStyle().

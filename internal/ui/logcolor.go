@@ -8,13 +8,13 @@ import (
 )
 
 var (
-	logTSStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("66"))
-	logErrStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-	logWarnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	logInfoStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
-	logDebugStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	logMsgStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	logSepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	logTSStyle    = lipgloss.NewStyle().Foreground(cLogTS)
+	logErrStyle   = lipgloss.NewStyle().Foreground(cError).Bold(true)
+	logWarnStyle  = lipgloss.NewStyle().Foreground(cWarn)
+	logInfoStyle  = lipgloss.NewStyle().Foreground(cOK)
+	logDebugStyle = lipgloss.NewStyle().Foreground(cLogDebug)
+	logMsgStyle   = lipgloss.NewStyle().Foreground(cLogMsg)
+	logSepStyle   = lipgloss.NewStyle().Foreground(cFaint)
 )
 
 var (

@@ -66,21 +66,21 @@ func (m *Model) tryLeaveSplash() tea.Cmd {
 
 func (m Model) viewSplash() string {
 	whaleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("39")).
+		Foreground(cWhale).
 		Bold(true)
 	coffeeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("180"))
+		Foreground(cCoffee)
 	brandStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("229")).
+		Foreground(cHelpKey).
 		Bold(true)
 	tagStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("110"))
+		Foreground(cAccent)
 	mutedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243"))
+		Foreground(cMuted)
 	barStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("39"))
+		Foreground(cWhale)
 	errStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("196")).
+		Foreground(cError).
 		Bold(true)
 
 	whale := whaleStyle.Render(dockerWhale)

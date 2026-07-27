@@ -36,10 +36,13 @@ func volumeHelperImage() string {
 
 // IsRemoteDaemon reports whether the Docker API points at a non-local unix socket.
 func (c *Client) IsRemoteDaemon() bool {
-	if c.IsDemo() {
+	if c == nil || c.IsDemo() {
 		return false
 	}
-	host := c.cli.DaemonHost()
+	host := c.Host()
+	if host == "" && c.cli != nil {
+		host = c.cli.DaemonHost()
+	}
 	if host == "" {
 		host = os.Getenv("DOCKER_HOST")
 	}

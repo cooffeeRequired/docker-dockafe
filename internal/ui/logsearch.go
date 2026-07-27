@@ -12,12 +12,12 @@ import (
 
 var (
 	logSearchHitStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("62")).
+				Foreground(cSearchFg).
+				Background(cSearchBg).
 				Bold(true)
 	logSearchBarStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("229")).
-				Background(lipgloss.Color("236")).
+				Foreground(cFilterFg).
+				Background(cFilterBg).
 				Padding(0, 1)
 )
 
@@ -160,9 +160,9 @@ func (m Model) currentSearchLine() int {
 
 func highlightLogLine(line, q string, re *regexp.Regexp, current bool) string {
 	plain := truncateForLogMatch(stripANSI(line))
-	bg := lipgloss.Color("238")
+	bg := cSearchRow
 	if current {
-		bg = lipgloss.Color("62")
+		bg = cSearchBg
 	}
 	lineStyle := lipgloss.NewStyle().Background(bg)
 

@@ -10,10 +10,6 @@ import (
 )
 
 // palette for container name prefixes in shared logs
-var containerColors = []string{
-	"39", "208", "141", "78", "203", "45", "220", "170", "80", "210",
-}
-
 func containerStyle(name string) lipgloss.Style {
 	h := 0
 	for _, r := range name {
@@ -22,7 +18,7 @@ func containerStyle(name string) lipgloss.Style {
 	if h < 0 {
 		h = -h
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(containerColors[h%len(containerColors)])).Bold(true)
+	return lipgloss.NewStyle().Foreground(containerColors[h%len(containerColors)]).Bold(true)
 }
 
 type logEntry struct {

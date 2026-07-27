@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/cooffeeRequired/dockafe/internal/config"
 	"github.com/cooffeeRequired/dockafe/internal/docker"
 )
 
@@ -380,6 +381,9 @@ func (m Model) composeSpec() docker.ComposeProjectSpec {
 }
 
 func (m Model) saveCompose(up bool) (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	spec := m.composeSpec()
 	if len(spec.Services) == 0 && m.cwStep != cwYAML {
 		m.status = "add at least one service (a) or edit YAML (y)"
@@ -395,24 +399,30 @@ func (m Model) saveCompose(up bool) (tea.Model, tea.Cmd) {
 	}
 	m.busy = true
 	m.status = "saving compose…"
+	host := m.auditHost()
 	return m, func() tea.Msg {
 		path, err := m.client.WriteComposeFile(spec, yamlBody)
 		if err != nil {
+			_ = config.Audit(host, "compose_save", spec.Name, false, err.Error())
 			return actionDoneMsg{err: err}
 		}
 		if !up {
+			_ = config.Audit(host, "compose_save", path, true, "")
 			return actionDoneMsg{msg: "saved: " + path}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		dir := filepath.Dir(path)
 		if err := m.client.ComposeConfigCheck(ctx, dir); err != nil {
+			_ = config.Audit(host, "compose_up", path, false, err.Error())
 			return actionDoneMsg{err: fmt.Errorf("invalid yaml: %w", err), msg: path}
 		}
 		msg, err := m.client.ComposeUp(ctx, dir, spec.Name)
 		if err != nil {
+			_ = config.Audit(host, "compose_up", path, false, err.Error())
 			return actionDoneMsg{err: err, msg: "file: " + path}
 		}
+		_ = config.Audit(host, "compose_up", path, true, "")
 		return actionDoneMsg{msg: "saved+up: " + path + " · " + truncate(msg, 80)}
 	}
 }
@@ -496,6 +506,9 @@ func suggestionPrefixMatch(typed, suggestion string) bool {
 }
 
 func (m Model) runImageWizard() (tea.Model, tea.Cmd) {
+	if m2, ok := m.guardMutate(); !ok {
+		return m2, nil
+	}
 	ref := strings.TrimSpace(m.iwInputs[iwImage].Value())
 	if ref == "" && len(m.acItems) > 0 {
 		ref = m.acItems[m.acIndex]
@@ -510,16 +523,24 @@ func (m Model) runImageWizard() (tea.Model, tea.Cmd) {
 	mode := m.iwMode
 	m.busy = true
 	m.status = "pulling/starting " + ref + "…"
+	host := m.auditHost()
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		var msg string
 		var err error
+		action := "pull_image"
 		if mode == ImageModeTemporary {
+			action = "run_temporary"
 			msg, err = m.client.RunTemporaryContainer(ctx, ref, name, ports)
 		} else {
 			msg, err = m.client.PullImage(ctx, ref)
 		}
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		}
+		_ = config.Audit(host, action, ref, err == nil, errMsg)
 		return actionDoneMsg{err: err, msg: msg}
 	}
 }
