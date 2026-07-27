@@ -139,7 +139,8 @@ Press <kbd>?</kbd> inside the app for the full reference.
 | Lifecycle | <kbd>s</kbd> start, <kbd>x</kbd> stop, <kbd>R</kbd> restart, <kbd>b</kbd> rebuild, <kbd>d</kbd>/<kbd>D</kbd> remove |
 | Logs | <kbd>l</kbd>, <kbd>/</kbd> find, <kbd>Ctrl</kbd>+<kbd>G</kbd> regex |
 | Events | <kbd>E</kbd> live die/oom/health events |
-| Hosts | <kbd>H</kbd> switch Docker host / context |
+| Hosts | <kbd>H</kbd> switch host · <kbd>a</kbd> add favorite · <kbd>s</kbd> save current · <kbd>d</kbd> delete |
+| Multi-host | <kbd>M</kbd> side-by-side · <kbd>Tab</kbd> focus pane · <kbd>H</kbd> change focused host |
 | Graphs | <kbd>g</kbd> CPU/MEM history (Compose / Containers) |
 | Volume files | <kbd>f</kbd> tree, <kbd>y</kbd>/<kbd>Y</kbd> ↓ local, <kbd>u</kbd>/<kbd>U</kbd> ↑ volume |
 | Quit | <kbd>q</kbd> |
@@ -154,6 +155,18 @@ Press <kbd>?</kbd> inside the app for the full reference.
 | `DOCKER_HOST` | Docker daemon address (overridden by `--host` / in-app `H`) |
 | `DOCKAFE_EDITOR` / `EDITOR` / `VISUAL` | External editor for volume files. `code` / `codium` get `--wait` automatically |
 | `DOCKAFE_BUSYBOX_IMAGE` | Helper image when host mount is unavailable (default `busybox:1.36.1`). Treat as trusted — it is pulled/run with the volume bind |
+
+Saved favorites live in `~/.config/dockafe/hosts.json` (created via Hosts → <kbd>a</kbd> / <kbd>s</kbd>).
+
+| File | Purpose |
+|------|---------|
+| `~/.config/dockafe/hosts.json` | Saved Docker host favorites |
+| `~/.config/dockafe/settings.json` | Preferences (`remote_read_only`, default `true`) |
+| `~/.config/dockafe/audit.log` | Append-only log of local mutating actions |
+
+**Remote write lock:** on `ssh://` / `tcp://` hosts, start/stop/remove/prune/upload are blocked until you unlock **Settings → Remote write**. Volume download (`y`) stays allowed.
+
+**Updates:** releases must ship `dockafe` **and** `dockafe.sha256`; install verifies SHA-256 before replacing the binary (`make checksum` locally).
 
 ```bash
 dockafe --host ssh://user@podnikam.eu
@@ -174,6 +187,7 @@ dockafe --host tcp://192.168.1.10:2375
 make test
 make vet
 make build
+make checksum   # writes dockafe.sha256 for GitHub Releases
 ```
 
 Optional Docker smoke test:
