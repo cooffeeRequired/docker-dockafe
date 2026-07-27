@@ -19,15 +19,17 @@ const (
 
 // Info describes a newer release available on GitHub.
 type Info struct {
-	Current    string
-	Latest     string
-	Tag        string
-	URL        string
-	AssetURL   string
-	AssetName  string
-	Available  bool
-	CheckedAt  time.Time
-	CheckError string
+	Current        string
+	Latest         string
+	Tag            string
+	URL            string
+	AssetURL       string
+	AssetName      string
+	ChecksumURL    string
+	ExpectedSHA256 string
+	Available      bool
+	CheckedAt      time.Time
+	CheckError     string
 }
 
 type ghRelease struct {
@@ -90,17 +92,22 @@ func CheckLatest(ctx context.Context, current string, client *http.Client) Info 
 	info.URL = rel.HTMLURL
 	info.AssetName = AssetName
 
+	var checksumURL, sumsURL string
 	for _, a := range rel.Assets {
-		if a.Name == AssetName && a.BrowserDownloadURL != "" {
+		switch {
+		case a.Name == AssetName && a.BrowserDownloadURL != "":
 			info.AssetURL = a.BrowserDownloadURL
-			break
+		case a.Name == ChecksumAssetName && a.BrowserDownloadURL != "":
+			checksumURL = a.BrowserDownloadURL
+		case strings.EqualFold(a.Name, "SHA256SUMS") && a.BrowserDownloadURL != "":
+			sumsURL = a.BrowserDownloadURL
 		}
 	}
-	// Prefer exact name; fall back to first linux-ish binary if needed.
+	// Prefer exact name; fall back to first dockafe* binary if needed.
 	if info.AssetURL == "" {
 		for _, a := range rel.Assets {
 			n := strings.ToLower(a.Name)
-			if strings.Contains(n, "dockafe") && a.BrowserDownloadURL != "" {
+			if strings.Contains(n, "dockafe") && !strings.Contains(n, "sha256") && a.BrowserDownloadURL != "" {
 				info.AssetURL = a.BrowserDownloadURL
 				info.AssetName = a.Name
 				break
@@ -108,8 +115,43 @@ func CheckLatest(ctx context.Context, current string, client *http.Client) Info 
 		}
 	}
 
+	info.ChecksumURL = checksumURL
+	if info.ChecksumURL == "" {
+		info.ChecksumURL = sumsURL
+	}
+	if info.ChecksumURL != "" {
+		sum, err := fetchExpectedSHA256(ctx, client, info.ChecksumURL, info.AssetName)
+		if err != nil {
+			info.CheckError = "checksum: " + err.Error()
+		} else {
+			info.ExpectedSHA256 = sum
+		}
+	}
+
 	if Compare(current, rel.TagName) < 0 {
 		info.Available = true
 	}
 	return info
+}
+
+func fetchExpectedSHA256(ctx context.Context, client *http.Client, url, assetName string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "dockafe-updater")
+	req.Header.Set("Accept", "application/octet-stream")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download checksum: %s", resp.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	return ParseSHA256SumFile(string(body), assetName)
 }

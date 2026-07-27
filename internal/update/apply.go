@@ -7,15 +7,21 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
-// Apply downloads assetURL and replaces the running executable.
+// Apply downloads assetURL, verifies expectedSHA256 (required), and replaces the running executable.
 // The process should exit after a successful Apply so the new binary is used next launch.
-func Apply(ctx context.Context, assetURL string, client *http.Client) (string, error) {
+func Apply(ctx context.Context, assetURL, expectedSHA256 string, client *http.Client) (string, error) {
 	if assetURL == "" {
 		return "", fmt.Errorf("missing download url")
 	}
+	expectedSHA256 = strings.ToLower(strings.TrimSpace(expectedSHA256))
+	if expectedSHA256 == "" {
+		return "", fmt.Errorf("missing SHA256 checksum — refuse to install (need dockafe.sha256 on the release)")
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate executable: %w", err)
@@ -62,11 +68,24 @@ func Apply(ctx context.Context, assetURL string, client *http.Client) (string, e
 		_ = tmp.Close()
 		return "", fmt.Errorf("write temp: %w", err)
 	}
-	if err := tmp.Chmod(0o755); err != nil {
-		_ = tmp.Close()
+	if err := tmp.Close(); err != nil {
 		return "", err
 	}
-	if err := tmp.Close(); err != nil {
+
+	f, err := os.Open(tmpName)
+	if err != nil {
+		return "", err
+	}
+	got, err := HashReader(f)
+	_ = f.Close()
+	if err != nil {
+		return "", fmt.Errorf("hash download: %w", err)
+	}
+	if got != expectedSHA256 {
+		return "", fmt.Errorf("SHA256 mismatch: got %s want %s", got, expectedSHA256)
+	}
+
+	if err := os.Chmod(tmpName, 0o755); err != nil {
 		return "", err
 	}
 

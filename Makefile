@@ -1,4 +1,4 @@
-.PHONY: fmt vet test build run clean install shots
+.PHONY: fmt vet test build run clean install shots checksum
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 1.0.0)
 LDFLAGS := -s -w -X github.com/cooffeeRequired/dockafe/internal/ui.AppVersion=$(VERSION)
@@ -15,6 +15,10 @@ test:
 build:
 	go build -ldflags="$(LDFLAGS)" -o dockafe .
 	@echo "Built dockafe $(VERSION) — if TUI is running, press q and start again."
+
+checksum: build
+	sha256sum dockafe | awk '{print $$1 "  dockafe"}' > dockafe.sha256
+	@echo "Wrote dockafe.sha256 — upload alongside dockafe on the GitHub release."
 
 run: build
 	./dockafe
@@ -33,4 +37,4 @@ install: build
 	@echo "Installed to $$(go env GOPATH)/bin/dockafe"
 
 clean:
-	rm -f dockafe docker-tui docs/assets/*.ansi
+	rm -f dockafe docker-tui dockafe.sha256 docs/assets/*.ansi
